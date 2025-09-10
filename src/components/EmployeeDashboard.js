@@ -23,7 +23,7 @@ import {
 
 /** Backends */
 const API_BASE  = process.env.REACT_APP_API_BASE  || 'http://127.0.0.1:8000';   // QR/attendance API
-const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'http://127.0.0.1:8081';   // Flask Wi-Fi API (ngrok URL in prod)
+const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'https://4a94b6e818b2.ngrok-free.app'; // Flask Wi-Fi API (ngrok URL in prod)
 
 const companyLocation = {
   latitude: 10.95414445334311,
@@ -53,38 +53,44 @@ const EmployeeDashboard = () => {
   }, []);
 
   // --- Wi-Fi check (expects JSON: { ok: boolean, reason: string, ... }) ---
-  const verifyWifiThenLocation = async () => {
-    setMessage('Checking Wi-Fi…');
-    try {
-      const res = await fetch(`${WIFI_BASE}/student/S001/T001?t=${Date.now()}`, {
-        credentials: 'include'
-      });
+ const verifyWifiThenLocation = async () => {
+  setMessage('Checking Wi-Fi…');
+  try {
+    // If you have real IDs, replace S001/T001 below (or compute from `user`)
+    const res = await fetch(
+      `${WIFI_BASE}/student/S001/T001?t=${Date.now()}`,
+      { method: 'GET', mode: 'cors' } // no credentials; simpler CORS
+    );
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0,120)}`);
+    if (!res.ok) {
+      if (res.status === 404) {
+        setMessage('❌ No teacher session found. Ask the teacher to press “Start Session”.');
         return;
       }
-
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) {
-        const text = await res.text().catch(() => '');
-        setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0,120)}`);
-        return;
-      }
-
-      const data = await res.json(); // <-- { ok, reason, ... }
-      if (data.ok) {
-        setMessage('✅ Wi-Fi paired. Verifying location…');
-        verifyLocation();
-      } else {
-        setMessage(`❌ Wi-Fi not connected: ${data.reason || 'Different network'}.`);
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage('❌ Wi-Fi check failed (network/CORS).');
+      const text = await res.text().catch(() => '');
+      setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0, 120)}`);
+      return;
     }
-  };
+
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      const text = await res.text().catch(() => '');
+      setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0, 120)}`);
+      return;
+    }
+
+    const data = await res.json(); // { ok, reason, ... }
+    if (data.ok) {
+      setMessage('✅ Wi-Fi paired. Verifying location…');
+      verifyLocation();
+    } else {
+      setMessage(`❌ Wi-Fi not connected: ${data.reason || 'Different network'}.`);
+    }
+  } catch (err) {
+    console.error(err);
+    setMessage('❌ Wi-Fi check failed (network/CORS).');
+  }
+};
 
   const verifyLocation = () => {
     setMessage('Verifying location...');
@@ -592,4 +598,5 @@ const EmployeeDashboard = () => {
 };
 
 export default EmployeeDashboard;
+
 
