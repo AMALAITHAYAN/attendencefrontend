@@ -209,6 +209,7 @@ const verifyFace = async (blob) => {
 
   // ---------- Full-screen QR step ----------
 // ---------- Full-screen QR step (mobile rear camera + single stream) ----------
+// ---------- Full-screen QR step (mobile rear camera + single stream) ----------
 const startQRScan = async () => {
   setStep('qr');
 
@@ -339,7 +340,6 @@ const startQRScan = async () => {
     await stopQRScan(false);
   }
 };
-
 
 const stopQRScan = async (removeOverlay = true) => {
   try {
@@ -632,6 +632,7 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
+
 
 
 
