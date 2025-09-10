@@ -52,15 +52,23 @@ const EmployeeDashboard = () => {
     };
   }, []);
 
-  // --- Wi-Fi check (expects JSON: { ok: boolean, reason: string, ... }) ---
- const verifyWifiThenLocation = async () => {
+  const WIFI_BASE =
+  process.env.REACT_APP_WIFI_BASE || 'https://4a94b6e818b2.ngrok-free.app';
+
+const STUDENT_ID = encodeURIComponent(user?.rollNo || user?.id || 'S001');
+const TEACHER_ID = 'T001';
+
+const verifyWifiThenLocation = async () => {
   setMessage('Checking Wi-Fi…');
   try {
-    // If you have real IDs, replace S001/T001 below (or compute from `user`)
-    const res = await fetch(
-      `${WIFI_BASE}/student/S001/T001?t=${Date.now()}`,
-      { method: 'GET', mode: 'cors' } // no credentials; simpler CORS
-    );
+    const url = `${WIFI_BASE}/student/${STUDENT_ID}/${TEACHER_ID}` +
+                `?ngrok-skip-browser-warning=1&t=${Date.now()}`;
+
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      headers: { 'ngrok-skip-browser-warning': '1', 'Accept': 'application/json' }
+    });
 
     if (!res.ok) {
       if (res.status === 404) {
@@ -68,18 +76,24 @@ const EmployeeDashboard = () => {
         return;
       }
       const text = await res.text().catch(() => '');
-      setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0, 120)}`);
+      setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0,120)}`);
       return;
     }
 
+    // Try JSON even if content-type is off
+    let data;
     const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) {
-      const text = await res.text().catch(() => '');
-      setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0, 120)}`);
-      return;
+    if (ct.includes('application/json')) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      try { data = JSON.parse(text); }
+      catch {
+        setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0,120)}`);
+        return;
+      }
     }
 
-    const data = await res.json(); // { ok, reason, ... }
     if (data.ok) {
       setMessage('✅ Wi-Fi paired. Verifying location…');
       verifyLocation();
@@ -91,6 +105,7 @@ const EmployeeDashboard = () => {
     setMessage('❌ Wi-Fi check failed (network/CORS).');
   }
 };
+
 
   const verifyLocation = () => {
     setMessage('Verifying location...');
@@ -598,5 +613,6 @@ const EmployeeDashboard = () => {
 };
 
 export default EmployeeDashboard;
+
 
 
