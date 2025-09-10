@@ -4,7 +4,7 @@ module.exports = function(app) {
   app.use(
     '/student',
     createProxyMiddleware({
-      target: 'http://172.20.102.202:8081/',
+      target: 'https://4a94b6e818b2.ngrok-free.app/',
       changeOrigin: true,
     })
   );
