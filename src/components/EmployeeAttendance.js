@@ -9,7 +9,7 @@ const EmployeeAttendance = () => {
   const handleCheckIn = async () => {
     try {
       const response = await axios.post(
-        `http://localhost:8080/api/attendance/checkin/${user.id}`
+        `https://backendattendance-1.onrender.com/api/attendance/checkin/${user.id}`
       );
       setCheckInData(response.data); // store attendance record (with its ID)
       setMessage('✅ Checked in successfully!');
@@ -21,7 +21,7 @@ const EmployeeAttendance = () => {
   const handleCheckOut = async () => {
     try {
       const response = await axios.post(
-        `http://localhost:8080/api/attendance/checkout/${checkInData.id}`
+        `https://backendattendance-1.onrender.com/api/attendance/checkout/${checkInData.id}`
       );
       setMessage('✅ Checked out successfully!');
     } catch (err) {

@@ -22,7 +22,7 @@ const AttendanceTracker = () => {
         setAttendance([]);
         return;
       }
-      const url = `http://localhost:8080/api/attendance/date?date=${customDate}`;
+      const url = `https://backendattendance-1.onrender.com/api/attendance/date?date=${customDate}`;
       const response = await axios.get(url);
       setAttendance(response.data);
     } catch (error) {

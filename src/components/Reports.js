@@ -18,8 +18,8 @@ const Reports = () => {
     setIsLoading(true);
     try {
       const [employeesRes, attendanceRes] = await Promise.all([
-        axios.get('http://localhost:8080/api/employees'),
-        axios.get('http://localhost:8080/api/attendance/today')
+        axios.get('https://backendattendance-1.onrender.com/api/employees'),
+        axios.get('https://backendattendance-1.onrender.com/api/attendance/today')
       ]);
 
       const employeesData = employeesRes.data;

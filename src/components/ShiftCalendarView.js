@@ -21,7 +21,7 @@ const ShiftCalendarView = () => {
     const fetchShiftData = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`http://localhost:8080/api/employees/shift/${user?.id}`);
+        const response = await fetch(`https://backendattendance-1.onrender.com/api/employees/shift/${user?.id}`);
         if (!response.ok) throw new Error('Failed to fetch shifts');
         const data = await response.json();
 

@@ -14,7 +14,7 @@ const ManageEmployees = () => {
     const location = useLocation();
 
     const fetchEmployees = () => {
-        axios.get('http://localhost:8080/api/employees')
+        axios.get('https://backendattendance-1.onrender.com/api/employees')
             .then(response => setEmployees(response.data))
             .catch(error => {
                 console.error('Error fetching employees:', error);
@@ -55,7 +55,7 @@ const ManageEmployees = () => {
     };
     const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this employee?')) {
-            try { await axios.delete(`http://localhost:8080/api/employees/${id}`); fetchEmployees(); }
+            try { await axios.delete(`https://backendattendance-1.onrender.com/api/employees/${id}`); fetchEmployees(); }
             catch (error) { console.error('Error deleting employee:', error); alert('Failed to delete employee.'); }
         }
     };

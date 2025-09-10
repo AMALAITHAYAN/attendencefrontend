@@ -26,7 +26,7 @@ const Login = () => {
 
     try {
       // ✅ DO NOT CHANGE: keeps your API connection intact
-      const response = await axios.post('http://localhost:8080/api/employees/login', {
+      const response = await axios.post('https://backendattendance-1.onrender.com/api/employees/login', {
         email,
         password,
       });

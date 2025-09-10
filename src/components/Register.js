@@ -73,7 +73,7 @@ const Register = () => {
       setUploadProgress(0);
 
       await axios.post(
-        `http://localhost:8080/api/face/register/${employeeId}`,
+        `https://backendattendance-1.onrender.com/api/face/register/${employeeId}`,
         form,
         {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -132,7 +132,7 @@ const Register = () => {
 
     try {
       const res = await axios.post(
-        'http://localhost:8080/api/employees/register',
+        'https://backendattendance-1.onrender.com/api/employees/register',
         employeeData
       );
 

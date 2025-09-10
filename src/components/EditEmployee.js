@@ -40,7 +40,7 @@ const EditEmployee = () => {
   const statuses = ['Active', 'Inactive'];
 
   useEffect(() => {
-    fetch(`http://localhost:8080/api/employees/${id}`)
+    fetch(`https://backendattendance-1.onrender.com/api/employees/${id}`)
       .then((res) => {
         if (!res.ok) throw new Error('Network response was not ok');
         return res.json();
@@ -80,7 +80,7 @@ const EditEmployee = () => {
     if (!payload.password) delete payload.password;
 
     try {
-      const response = await fetch(`http://localhost:8080/api/employees/${id}`, {
+      const response = await fetch(`https://backendattendance-1.onrender.com/api/employees/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

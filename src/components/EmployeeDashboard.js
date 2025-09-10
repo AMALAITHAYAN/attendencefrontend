@@ -132,7 +132,7 @@ const verifyWifiThenLocation = async () => {
       formData.append('image', blob, 'face.jpg');
 
       setStep('verifyingFace');
-      const res = await axios.post('http://localhost:8080/api/face/checkin', formData, {
+      const res = await axios.post('https://backendattendance-1.onrender.com/api/face/checkin', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -308,7 +308,7 @@ const verifyWifiThenLocation = async () => {
 
   const checkIn = async () => {
     try {
-      const res = await axios.post(`http://localhost:8080/api/attendance/checkin/${user.id}`, {
+      const res = await axios.post(`https://backendattendance-1.onrender.com/api/attendance/checkin/${user.id}`, {
         snapshot
       });
       setAttendanceId(res.data.id);
@@ -331,7 +331,7 @@ const verifyWifiThenLocation = async () => {
       return;
     }
     try {
-      await axios.post(`http://localhost:8080/api/attendance/checkout/${attendanceId}`);
+      await axios.post(`https://backendattendance-1.onrender.com/api/attendance/checkout/${attendanceId}`);
       setMessage('✅ Checked out successfully.');
     } catch (err) {
       setMessage('❌ Failed to check out.');

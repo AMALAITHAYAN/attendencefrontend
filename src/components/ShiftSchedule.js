@@ -39,7 +39,7 @@ const ShiftSchedule = () => {
         }
         setErrorMsg('');
         try {
-            const response = await fetch(`http://localhost:8080/api/employees/shift/${employee.id}`);
+            const response = await fetch(`https://backendattendance-1.onrender.com/api/employees/shift/${employee.id}`);
             if (!response.ok) throw new Error('Failed to load shifts');
             const shiftData = await response.json();
             setShifts({ [employee.id]: shiftData.shifts || {} });
@@ -80,7 +80,7 @@ const ShiftSchedule = () => {
         if (!selectedShift || !selectedDate || !foundEmployee) return;
         try {
             const payload = [{ employeeId: foundEmployee.id, date: selectedDate, shift: selectedShift }];
-            const response = await fetch('http://localhost:8080/api/employees/shifts/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const response = await fetch('https://backendattendance-1.onrender.com/api/employees/shifts/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!response.ok) throw new Error('Failed to save shift');
             await fetchShiftsForEmployee(foundEmployee);
             setShowPopup(false);
@@ -97,7 +97,7 @@ const ShiftSchedule = () => {
         setErrorMsg('');
         if (!searchTerm.trim()) { setFoundEmployee(null); setErrorMsg('Please enter employee ID or name'); return; }
         try {
-            const response = await fetch(`http://localhost:8080/api/employees/shift/${encodeURIComponent(searchTerm)}`);
+            const response = await fetch(`https://backendattendance-1.onrender.com/api/employees/shift/${encodeURIComponent(searchTerm)}`);
             if (!response.ok) throw new Error('Employee not found');
             const data = await response.json();
             if (data && data.id) {
