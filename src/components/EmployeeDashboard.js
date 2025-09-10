@@ -536,7 +536,7 @@ const stopQRScan = async (removeOverlay = true) => {
 
       {/* Content */}
       <div className="dashboard-container">
-        <p className="dashboard-subtitle">This is your Attendance Dashboard</p>
+        <p className="dashboard-subtitle">This is your Attendance dashboard</p>
 
         {/* Top stats / status */}
         <div className="cards">
@@ -645,6 +645,7 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
+
 
 
 
