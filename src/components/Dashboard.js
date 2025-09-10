@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
 import logo from './assets/logo.png';
 
-const TEACHER_URL = 'http://172.20.102.202:8081/teacher/T001';
+const TEACHER_URL = 'https://4a94b6e818b2.ngrok-free.app/teacher/T001';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -144,3 +144,4 @@ const handleStartSession = async () => {
 };
 
 export default Dashboard;
+
