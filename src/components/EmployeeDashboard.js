@@ -208,8 +208,19 @@ const verifyFace = async (blob) => {
 
 
   // ---------- Full-screen QR step ----------
- const startQRScan = async () => {
+// ---------- Full-screen QR step (mobile rear camera + single stream) ----------
+const startQRScan = async () => {
   setStep('qr');
+
+  // Make sure we’re on HTTPS (mobile won’t allow camera otherwise)
+  if (!window.isSecureContext) {
+    setMessage('❌ Camera requires HTTPS on mobile. Open this page over https://');
+    return;
+  }
+
+  // 🔒 IMPORTANT: stop the face camera stream before starting QR scanner
+  stopCamera();
+
   setMessage('Open camera to scan the admin QR…');
 
   // Build overlay once
@@ -229,49 +240,27 @@ const verifyFace = async (blob) => {
     `;
     document.body.appendChild(overlay);
 
-    // styles for full-screen overlay
     const style = document.createElement('style');
     style.textContent = `
-      #${OVERLAY_ID}{
-        position: fixed; inset: 0; z-index: 9999;
-        background: #000; color: #fff;
-        display: grid; grid-template-rows: auto 1fr auto;
-      }
-      #${OVERLAY_ID} .qr-overlay-inner{
-        display: grid; grid-template-rows: auto 1fr auto; height: 100vh;
-      }
-      #${OVERLAY_ID} .qr-topbar{
-        display:flex; align-items:center; justify-content:space-between;
-        padding: 12px 16px; background: rgba(0,0,0,0.4); font-weight: 700;
-      }
-      #${OVERLAY_ID} .qr-close{
-        background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.25);
-        border-radius: 10px; padding: 8px 12px; cursor: pointer; font-weight: 800;
-      }
-      #${OVERLAY_ID} .qr-close:active{ transform: translateY(1px); }
-      #${OVERLAY_ID} #${VIDEO_ID}{
-        width: 100vw; height: calc(100vh - 120px);
-      }
-      #${OVERLAY_ID} .qr-help{
-        text-align:center; padding: 10px; opacity: .75;
-      }
-      /* Make the video feed fill container */
-      #${VIDEO_ID} video{
-        width: 100% !important; height: 100% !important; object-fit: cover;
-      }
-      /* Optional scanning line (visual only) */
-      #${OVERLAY_ID}::after{
-        content:""; position:absolute; left:10%; right:10%; top:50%;
-        height:2px; background: rgba(0,255,128,.6); box-shadow:0 0 12px rgba(0,255,128,.8);
-        transform: translateY(-1px);
-      }
+      #${OVERLAY_ID}{ position:fixed; inset:0; z-index:9999; background:#000; color:#fff;
+        display:grid; grid-template-rows:auto 1fr auto; }
+      #${OVERLAY_ID} .qr-overlay-inner{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
+      #${OVERLAY_ID} .qr-topbar{ display:flex; align-items:center; justify-content:space-between;
+        padding:12px 16px; background:rgba(0,0,0,.4); font-weight:700; }
+      #${OVERLAY_ID} .qr-close{ background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
+        border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:800; }
+      #${OVERLAY_ID} #${VIDEO_ID}{ width:100vw; height:calc(100vh - 120px); }
+      #${OVERLAY_ID} .qr-help{ text-align:center; padding:10px; opacity:.75; }
+      #${VIDEO_ID} video{ width:100% !important; height:100% !important; object-fit:cover; }
+      #${OVERLAY_ID}::after{ content:""; position:absolute; left:10%; right:10%; top:50%;
+        height:2px; background:rgba(0,255,128,.6); box-shadow:0 0 12px rgba(0,255,128,.8);
+        transform:translateY(-1px); }
     `;
     document.head.appendChild(style);
 
-    // close action
     overlay.querySelector('#qr-close-btn').addEventListener('click', () => {
       stopQRScan();
-      setStep('confirmed'); // allow retry
+      setStep('confirmed');
       setMessage('QR scan cancelled.');
     });
   }
@@ -279,52 +268,39 @@ const verifyFace = async (blob) => {
   // If already running, stop first
   await stopQRScan(false);
 
-  // Create scanner
-  const html5QrCode = new Html5Qrcode(VIDEO_ID, /* verbose= */ false);
+  const html5QrCode = new Html5Qrcode(VIDEO_ID, /* verbose */ false);
   qrRef.current = html5QrCode;
 
   try {
-    // 🔍 Get camera list and pick the rear one if possible
+    // 🎯 Prefer rear camera on mobile
     const cameras = await Html5Qrcode.getCameras();
     if (!cameras || cameras.length === 0) {
       setMessage('❌ No camera found on this device.');
       return;
     }
-
     let backCam = cameras.find(c => /back|rear|environment/i.test(c.label));
-    // iOS 16+ sometimes labels rear cam as simply "Camera"
-    if (!backCam && cameras.length > 1) {
-      backCam = cameras[1];
-    }
+    if (!backCam && cameras.length > 1) backCam = cameras[1];
     const deviceId = (backCam || cameras[0]).id;
 
     await html5QrCode.start(
-      { deviceId: { exact: deviceId } },     // ✅ force this camera
+      { deviceId: { exact: deviceId } },          // force this lens
       { fps: 24, qrbox: { width: 260, height: 260 } },
       async (decodedText) => {
-        // We got a QR result — stop scanner ASAP
         await stopQRScan(false);
-
-        // Verify token with backend
         try {
           const resp = await fetch(`${API_BASE}/qr/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: decodedText })
           });
-
           if (!resp.ok) {
             let details = 'Failed to verify QR';
-            try {
-              const errJson = await resp.json();
-              if (errJson?.message) details = errJson.message;
-            } catch {}
+            try { const errJson = await resp.json(); if (errJson?.message) details = errJson.message; } catch {}
             setMessage(`❌ ${details}`);
             setStep('confirmed');
             await stopQRScan(true);
             return;
           }
-
           const json = await resp.json();
           if (json?.success) {
             setMessage('✅ QR verified. Completing check-in…');
@@ -337,7 +313,7 @@ const verifyFace = async (blob) => {
           }
         } catch (e) {
           const hint = e?.message?.includes('Failed to fetch')
-            ? 'Network/CORS error. Is the Flask server running with CORS enabled?'
+            ? 'Network/CORS error. Is the server reachable?'
             : e?.message || 'Unknown error';
           setMessage(`❌ QR verify request failed. ${hint}`);
           setStep('confirmed');
@@ -346,13 +322,24 @@ const verifyFace = async (blob) => {
       },
       () => {} // ignore per-frame errors
     );
+
+    // iOS: keep inline, avoid full-screen video
+    setTimeout(() => {
+      const v = document.querySelector(`#${VIDEO_ID} video`);
+      if (v) { v.setAttribute('playsinline','true'); v.setAttribute('webkit-playsinline','true'); v.muted = true; }
+    }, 250);
+
   } catch (err) {
     console.error('QR start error:', err);
-    setMessage('❌ Could not start camera for QR scan.');
+    const msg = (err && err.name === 'NotAllowedError')
+      ? 'Camera permission denied. Enable camera access in site settings.'
+      : 'Could not start camera for QR scan.';
+    setMessage(`❌ ${msg}`);
     setStep('confirmed');
     await stopQRScan(false);
   }
 };
+
 
 const stopQRScan = async (removeOverlay = true) => {
   try {
@@ -645,6 +632,7 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
+
 
 
 
