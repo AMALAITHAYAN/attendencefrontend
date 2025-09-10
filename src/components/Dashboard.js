@@ -3,53 +3,59 @@ import { useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
 import logo from './assets/logo.png';
 
-const TEACHER_URL = 'https://4a94b6e818b2.ngrok-free.app/teacher/T001';
+// Base for your Flask Wi-Fi service (ngrok/HTTPS in prod)
+const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'http://127.0.0.1:8081';
+// Hard-coded teacher id from your example; change if needed or pull from auth
+const TEACHER_ID = 'T001';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [starting, setStarting] = useState(false);
 
-  // Fire-and-forget GET without CORS headaches
-  // Uses an Image ping; no response is read, just triggers the endpoint.
-  const pingInBackground = (url) =>
-    new Promise((resolve, reject) => {
-      try {
-        const img = new Image();
-        img.onload = () => resolve();
-        img.onerror = () => resolve(); // treat errors as "fired" to avoid blocking UX
-        img.src = `${url}?_t=${Date.now()}`; // cache-bust
-        // Fallback resolve after 1s in case neither onload/onerror fires
-        setTimeout(resolve, 1000);
-      } catch (e) {
-        resolve();
+  const handleStartSession = async () => {
+    if (starting) return;
+    setStarting(true);
+    const id = toast.loading('Starting session… pairing with Wi-Fi');
+
+    try {
+      const url = `${WIFI_BASE}/teacher/${TEACHER_ID}?t=${Date.now()}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      // Non-2xx -> show error body (best effort)
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        toast.error(`Pairing failed (HTTP ${res.status}). ${text.slice(0,120)}`, { id });
+        setStarting(false);
+        return;
       }
-    });
 
-  // Alternative: if you prefer fetch, uncomment this and comment out pingInBackground above.
-  // Note: mode:'no-cors' avoids CORS preflight but you can't read the response.
-  // const pingInBackground = (url) =>
-  //   fetch(`${url}?_t=${Date.now()}`, { method: 'GET', mode: 'no-cors' })
-  //     .then(() => {})
-  //     .catch(() => {});
+      // Must be JSON: { ok: boolean, ... }
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const text = await res.text().catch(() => '');
+        toast.error(`Unexpected response type. ${text.slice(0,120)}`, { id });
+        setStarting(false);
+        return;
+      }
 
-const handleStartSession = async () => {
-  if (starting) return;
-  setStarting(true);
-  const id = toast.loading('Starting session… pairing with Wi-Fi');
+      const data = await res.json(); // { ok, ip?, error?, ... }
 
-  try {
-    await pingInBackground(TEACHER_URL);
-    toast.success('Paired with Wi-Fi', { id });
-
-    // ✅ Redirect to QR page after successful start
-    navigate('/admin-qr');
-  } catch {
-    toast('Attempted to pair in background', { id });
-  } finally {
-    setStarting(false);
-  }
-};
-
+      if (data.ok) {
+        toast.success(`Paired with Wi-Fi${data.ip ? ` (${data.ip})` : ''}`, { id });
+        navigate('/admin-qr'); // proceed to QR page
+      } else {
+        toast.error(`Pairing failed: ${data.reason || data.error || 'Unknown error'}`, { id });
+      }
+    } catch (e) {
+      toast.error('Network/CORS error while pairing.', { id });
+      console.error(e);
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const styles = `
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
@@ -107,13 +113,13 @@ const handleStartSession = async () => {
         <div className="dashboard-blue-container">
           <p className="dashboard-blue-subtitle">Choose an option to manage</p>
 
-          {/* New: Start Session / Wi-Fi Pair */}
+          {/* Start Session / Wi-Fi Pair */}
           <div className="dashboard-blue-buttons-grid" style={{ marginBottom: '1.2rem' }}>
             <button
               className="dashboard-blue-btn"
               onClick={handleStartSession}
               disabled={starting}
-              title={TEACHER_URL}
+              title={`${WIFI_BASE}/teacher/${TEACHER_ID}`}
             >
               {starting ? 'Starting…' : 'Start Session (Wi-Fi Pair)'}
             </button>
@@ -132,7 +138,6 @@ const handleStartSession = async () => {
             <button className="dashboard-blue-btn" onClick={() => navigate('/shift-schedule')}>
               Assign Periods
             </button>
-           
             <button className="dashboard-blue-btn dashboard-blue-btn-logout" onClick={() => navigate('/')}>
               Logout
             </button>
@@ -144,4 +149,3 @@ const handleStartSession = async () => {
 };
 
 export default Dashboard;
-
