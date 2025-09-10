@@ -1,0 +1,37 @@
+.employee-container {
+  padding: 20px;
+  text-align: center;
+}
+
+.employee-container table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.employee-container th,
+.employee-container td {
+  border: 1px solid #ccc;
+  padding: 10px;
+}
+
+.employee-container button {
+  margin-right: 10px;
+  padding: 5px 10px;
+}
+
+.employee-form-container {
+  max-width: 400px;
+  margin: 40px auto;
+}
+
+.employee-form-container input {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.employee-form-container button {
+  padding: 10px 20px;
+}

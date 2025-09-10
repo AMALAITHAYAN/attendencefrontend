@@ -1,0 +1,125 @@
+.dashboard-bg {
+
+  background-size: cover;
+  background-position: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', sans-serif;
+  padding: 0;
+  margin: 0;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 30px;
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-logo {
+  height: 50px;
+  margin-right: 15px;
+}
+
+.dashboard-header h1 {
+  font-size: 24px;
+  color: #333;
+  margin: 0;
+}
+
+.dashboard-container {
+  background-color: rgba(255, 255, 255, 0.9);
+  max-width: 450px;
+  margin: 40px auto;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-container h1 {
+  font-size: 1.8rem;
+  margin: 0 0 10px;
+  color: #333;
+}
+
+.dashboard-subtitle {
+  font-size: 16px;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+.dashboard-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.dashboard-buttons button {
+  padding: 10px 24px;
+  font-size: 15px;
+  background-color: #007bff;
+  border: none;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 220px;
+  transition: background-color 0.3s ease;
+}
+.shift-link-button {
+  background: none;
+  border: none;
+  color: #007bff;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 1em;
+  padding: 0;
+}
+
+.shift-link-button:hover {
+  color: #0056b3;
+}
+
+.dashboard-buttons button:hover {
+  background-color: #0056b3;
+}
+.profile-card {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 16px;
+  box-shadow: 0 0 8px rgba(0,0,0,0.1);
+  max-width: 400px;
+  margin: 20px auto;
+  text-align: left;
+}
+.dashboard-buttons-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 30px;
+}
+
+.dashboard-btn {
+  background-color: #007bff;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: 0.3s ease;
+}
+
+.dashboard-btn:hover {
+  background-color: #0056b3;
+}
+
+.shift-btn {
+  background-color: #28a745; /* Green */
+}
+
+.shift-btn:hover {
+  background-color: #1e7e34;
+}

@@ -1,0 +1,100 @@
+/* Container to center and add some breathing space */
+.add-employee-form {
+  max-width: 420px;
+  margin: 60px auto;
+  padding: 40px 35px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Heading centered and spaced */
+.add-employee-form h2 {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #222;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 1px;
+}
+
+/* Form vertical stack with nice gap */
+.add-employee-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Inputs and selects full width, consistent height and look */
+.add-employee-form input,
+.add-employee-form select {
+  width: 100%;
+  height: 50px;
+  padding: 0 16px;
+  font-size: 16px;
+  border: 2px solid #ddd;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  box-sizing: border-box;
+  appearance: none;
+  background-color: #fff;
+}
+
+/* Focus state with subtle shadow */
+.add-employee-form input:focus,
+.add-employee-form select:focus {
+  border-color: #3f51b5;
+  box-shadow: 0 0 8px rgba(63, 81, 181, 0.4);
+}
+
+/* Button style - full width, bold, rounded */
+.add-employee-form button {
+  padding: 15px 20px;
+  background-color: #3f51b5;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  box-shadow: 0 4px 10px rgba(63, 81, 181, 0.4);
+}
+
+/* Button hover */
+.add-employee-form button:hover {
+  background-color: #303f9f;
+}
+
+/* Optional: Add dropdown arrow to selects */
+.add-employee-form select {
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D'http%3A//www.w3.org/2000/svg'%20viewBox%3D'0%200%204%205'%3E%3Cpath%20fill%3D'%23666'%20d%3D'M2%200L0%202h4L2%200zm0%205L0%203h4l-2%202z'/%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px;
+}
+
+/* Autofill styling (for Chrome/Edge) */
+.add-employee-form input:-webkit-autofill {
+  background-color: #fff !important;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  color: #222 !important;
+}
+
+/* Optional: Error state (add class .error to inputs/selects when needed) */
+.add-employee-form input.error,
+.add-employee-form select.error {
+  border-color: #e53935;
+  box-shadow: 0 0 6px rgba(229, 57, 53, 0.5);
+}
+
+/* Responsive for smaller screens */
+@media (max-width: 480px) {
+  .add-employee-form {
+    padding: 30px 20px;
+    margin: 40px 15px;
+  }
+}
