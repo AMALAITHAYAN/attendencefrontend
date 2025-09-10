@@ -21,7 +21,9 @@ import {
   Loader2
 } from 'lucide-react';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000'; // Flask QR API
+/** Backends */
+const API_BASE  = process.env.REACT_APP_API_BASE  || 'http://127.0.0.1:8000';   // QR/attendance API
+const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'http://127.0.0.1:8081';   // Flask Wi-Fi API (ngrok URL in prod)
 
 const companyLocation = {
   latitude: 10.938035499416578,
@@ -50,32 +52,39 @@ const EmployeeDashboard = () => {
     };
   }, []);
 
-  // --- NEW: Wi-Fi check first, then proceed to your existing location flow ---
-  // replace your verifyWifiThenLocation (or add this if you don't have it yet)
-const verifyWifiThenLocation = async () => {
-  setMessage('Checking Wi-Fi…');
-  try {
-    const res = await fetch('https://4a94b6e818b2.ngrok-free.app/student/S001/T001?t=' + Date.now());
-    if (!res.ok) {
-      setMessage('❌ Wi-Fi check failed (status ' + res.status + ').');
-      return;
-    }
-    const msg = (await res.text()).trim().toLowerCase();
+  // --- Wi-Fi check (expects JSON: { ok: boolean, reason: string, ... }) ---
+  const verifyWifiThenLocation = async () => {
+    setMessage('Checking Wi-Fi…');
+    try {
+      const res = await fetch(`${WIFI_BASE}/student/S001/T001?t=${Date.now()}`, {
+        credentials: 'include'
+      });
 
-    if (msg.includes('verified')) {
-      setMessage('✅ Wi-Fi paired. Verifying location…');
-      verifyLocation();  // your existing function
-    } else if (msg.includes('no teacher')) {
-      setMessage('❌ No teacher session found.');
-    } else if (msg.includes('failed') || msg.includes('different network')) {
-      setMessage('❌ Wi-Fi not connected (different network).');
-    } else {
-      setMessage('❌ Wi-Fi check: unexpected response.');
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0,120)}`);
+        return;
+      }
+
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const text = await res.text().catch(() => '');
+        setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0,120)}`);
+        return;
+      }
+
+      const data = await res.json(); // <-- { ok, reason, ... }
+      if (data.ok) {
+        setMessage('✅ Wi-Fi paired. Verifying location…');
+        verifyLocation();
+      } else {
+        setMessage(`❌ Wi-Fi not connected: ${data.reason || 'Different network'}.`);
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage('❌ Wi-Fi check failed (network/CORS).');
     }
-  } catch (err) {
-    setMessage('❌ Wi-Fi check failed.');
-  }
-};
+  };
 
   const verifyLocation = () => {
     setMessage('Verifying location...');
@@ -136,14 +145,14 @@ const verifyWifiThenLocation = async () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      if (res.data.includes("Not Matched")) {
+      if (typeof res.data === 'string' && res.data.includes("Not Matched")) {
         setMessage("❌ Face not matched. Access denied.");
         setStep("idle");
         stopCamera();
         return;
       }
 
-      setMessage(`✅ Face match result: ${res.data}`);
+      setMessage(`✅ Face match result: ${typeof res.data === 'string' ? res.data : 'Matched'}`);
       setStep('confirmed'); // next: scan QR
     } catch (err) {
       setMessage('❌ Face verification failed.');
@@ -503,10 +512,10 @@ const verifyWifiThenLocation = async () => {
         {/* Actions */}
         <div className="buttons">
           {step === 'idle' && (
-  <button className="btn" onClick={verifyWifiThenLocation}>
-    <MapPinCheck size={16} /> Start Check-In
-  </button>
-)}
+            <button className="btn" onClick={verifyWifiThenLocation}>
+              <MapPinCheck size={16} /> Start Check-In
+            </button>
+          )}
           {step === 'location' && (
             <button className="btn secondary" disabled>
               <Loader2 size={16} className="spin" style={{animation: 'spin 1s linear infinite'}} /> Verifying Location…
@@ -583,4 +592,3 @@ const verifyWifiThenLocation = async () => {
 };
 
 export default EmployeeDashboard;
-
