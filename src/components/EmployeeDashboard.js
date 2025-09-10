@@ -140,48 +140,72 @@ const verifyWifiThenLocation = async () => {
     }
   };
 
-  const captureFace = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 240;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg');
+// --- capture a JPEG blob straight from canvas ---
+const captureFace = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 320;
+  canvas.height = 240;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-    fetch(dataUrl)
-      .then(res => res.blob())
-      .then(blob => {
-        setSnapshot(URL.createObjectURL(blob));
-        verifyFace(blob);
-      });
-  };
+  // Create a real JPEG blob (quality ~85%)
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      setMessage('❌ Could not capture image.');
+      return;
+    }
+    // Preview
+    setSnapshot(URL.createObjectURL(blob));
+    // Verify
+    await verifyFace(blob);
+  }, 'image/jpeg', 0.85);
+};
 
-  const verifyFace = async (blob) => {
-    try {
-      const formData = new FormData();
-      formData.append('image', blob, 'face.jpg');
+const verifyFace = async (blob) => {
+  try {
+    const formData = new FormData();
+    // Make sure the field name matches your Spring controller: @RequestParam("image")
+    formData.append('image', blob, 'face.jpg');
 
-      setStep('verifyingFace');
-      const res = await axios.post('https://backendattendance-1.onrender.com/api/face/checkin', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+    setStep('verifyingFace');
+    setMessage('Verifying face…');
 
-      if (typeof res.data === 'string' && res.data.includes("Not Matched")) {
-        setMessage("❌ Face not matched. Access denied.");
-        setStep("idle");
-        stopCamera();
-        return;
+    const res = await axios.post(
+      'https://backendattendance-1.onrender.com/api/face/checkin',
+      formData,
+      {
+        // DO NOT set Content-Type; browser adds boundary automatically
+        timeout: 120000, // 120s to survive Render cold starts
+        // onUploadProgress: (e) => console.log('upload', e.loaded, e.total)
       }
+    );
 
-      setMessage(`✅ Face match result: ${typeof res.data === 'string' ? res.data : 'Matched'}`);
-      setStep('confirmed'); // next: scan QR
-    } catch (err) {
-      setMessage('❌ Face verification failed.');
-      console.error(err);
+    const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+
+    if (body.includes('Not Matched')) {
+      setMessage('❌ Face not matched. Access denied.');
       setStep('idle');
       stopCamera();
+      return;
     }
-  };
+
+    setMessage(`✅ Face match result: ${body}`);
+    setStep('confirmed'); // proceed to QR
+  } catch (err) {
+    // Show as much detail as we can
+    const serverMsg = err?.response?.data
+      ? (typeof err.response.data === 'string'
+          ? err.response.data
+          : JSON.stringify(err.response.data))
+      : err?.message || 'Unknown error';
+
+    setMessage(`❌ Face verification failed. ${serverMsg}`);
+    console.error('face-checkin error:', err);
+    setStep('idle');
+    stopCamera();
+  }
+};
+
 
   // ---------- Full-screen QR step ----------
   const startQRScan = async () => {
@@ -613,6 +637,7 @@ const verifyWifiThenLocation = async () => {
 };
 
 export default EmployeeDashboard;
+
 
 
 
