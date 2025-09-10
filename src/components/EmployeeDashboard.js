@@ -55,7 +55,7 @@ const EmployeeDashboard = () => {
 const verifyWifiThenLocation = async () => {
   setMessage('Checking Wi-Fi…');
   try {
-    const res = await fetch('http://172.20.102.202:8081/student/S001/T001?t=' + Date.now());
+    const res = await fetch('https://4a94b6e818b2.ngrok-free.app/student/S001/T001?t=' + Date.now());
     if (!res.ok) {
       setMessage('❌ Wi-Fi check failed (status ' + res.status + ').');
       return;
@@ -583,3 +583,4 @@ const verifyWifiThenLocation = async () => {
 };
 
 export default EmployeeDashboard;
+
