@@ -43,6 +43,7 @@ const EmployeeDashboard = () => {
 
   // html5-qrcode instance for full-screen overlay
   const qrRef = useRef(null);
+  const overlayCreatedRef = useRef(false);
 
   useEffect(() => {
     // cleanup on unmount
@@ -68,7 +69,7 @@ const EmployeeDashboard = () => {
 
       if (!res.ok) {
         if (res.status === 404) {
-          setMessage('❌ No teacher session found. Ask the teacher to press “Start Session”.');
+          setMessage('❌ No teacher session found. Ask the teacher to press "Start Session".');
           return;
         }
         const text = await res.text().catch(() => '');
@@ -197,186 +198,301 @@ const EmployeeDashboard = () => {
 
   // ---------- helpers for media/QR ----------
   const stopTracks = (stream) => {
-    try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
+    try { 
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach(track => {
+          if (track.readyState === 'live') {
+            track.stop();
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Error stopping tracks:', e);
+    }
   };
 
   const stopQRScan = async (removeOverlay = true) => {
+    console.log('Stopping QR scan...');
     try {
       if (qrRef.current) {
+        console.log('Stopping Html5Qrcode instance...');
         await qrRef.current.stop();
         await qrRef.current.clear();
         qrRef.current = null;
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Error stopping QR scanner:', e);
+    }
+    
     if (removeOverlay) {
       const overlay = document.getElementById(OVERLAY_ID);
-      if (overlay) overlay.remove();
+      if (overlay) {
+        console.log('Removing overlay...');
+        overlay.remove();
+        overlayCreatedRef.current = false;
+      }
     }
   };
 
   // ---------- Full-screen QR step (Android-friendly, rear cam, single stream) ----------
   const startQRScan = async () => {
+    console.log('Starting QR scan...');
     setStep('qr');
+    setMessage('Preparing camera for QR scan...');
+
+    // Stop any existing camera streams first
+    const faceStream = videoRef.current?.srcObject;
+    if (faceStream) {
+      console.log('Stopping face camera stream...');
+      stopTracks(faceStream);
+      videoRef.current.srcObject = null;
+    }
+
+    // Stop any existing QR scanner
+    await stopQRScan(false);
 
     // Mobile requires HTTPS for camera
-    if (!window.isSecureContext) {
-      setMessage('❌ Camera requires HTTPS on mobile. Open this page over https://');
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      setMessage('❌ Camera requires HTTPS on mobile/production. Please use HTTPS.');
+      setStep('confirmed');
       return;
     }
 
-    // Ensure previous (face) stream is fully stopped before starting a new one
-    const prev = videoRef.current?.srcObject;
-    if (prev) stopTracks(prev);
-    if (videoRef.current) videoRef.current.srcObject = null;
-
-    setMessage('Open camera to scan the admin QR…');
-
-    // Build overlay (once)
+    // Create overlay if it doesn't exist
     let overlay = document.getElementById(OVERLAY_ID);
-    if (!overlay) {
+    if (!overlay || !overlayCreatedRef.current) {
+      console.log('Creating QR overlay...');
+      
+      // Remove any existing overlay first
+      const existingOverlay = document.getElementById(OVERLAY_ID);
+      if (existingOverlay) {
+        existingOverlay.remove();
+      }
+
       overlay = document.createElement('div');
       overlay.id = OVERLAY_ID;
       overlay.innerHTML = `
         <div class="qr-overlay-inner">
           <div class="qr-topbar">
             <span>Scan the Admin QR</span>
-            <button id="qr-close-btn" class="qr-close">Close</button>
+            <button id="qr-close-btn" class="qr-close">✕ Close</button>
           </div>
-          <div id="${VIDEO_ID}"></div>
+          <div id="${VIDEO_ID}" class="qr-video-container"></div>
           <div class="qr-help">Point your camera at the QR code</div>
         </div>
       `;
       document.body.appendChild(overlay);
+      overlayCreatedRef.current = true;
 
-      const style = document.createElement('style');
-      style.textContent = `
-        #${OVERLAY_ID}{ position:fixed; inset:0; z-index:9999; background:#000; color:#fff;
-          display:grid; grid-template-rows:auto 1fr auto; }
-        #${OVERLAY_ID} .qr-overlay-inner{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
-        #${OVERLAY_ID} .qr-topbar{ display:flex; align-items:center; justify-content:space-between;
-          padding:12px 16px; background:rgba(0,0,0,.4); font-weight:700; }
-        #${OVERLAY_ID} .qr-close{ background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
-          border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:800; }
-        #${OVERLAY_ID} #${VIDEO_ID}{ width:100vw; height:calc(100vh - 120px); }
-        #${OVERLAY_ID} .qr-help{ text-align:center; padding:10px; opacity:.75; }
-        #${VIDEO_ID} video{ width:100% !important; height:100% !important; object-fit:cover; }
-      `;
-      document.head.appendChild(style);
-
-      overlay.querySelector('#qr-close-btn').addEventListener('click', () => {
-        stopQRScan();
-        setStep('confirmed');
-        setMessage('QR scan cancelled.');
-      });
-    }
-
-    // If already running, stop first
-    await stopQRScan(false);
-
-    const html5QrCode = new Html5Qrcode(VIDEO_ID, /* verbose */ false);
-    qrRef.current = html5QrCode;
-
-    try {
-      // Warm-up permission (some Android versions need this)
-      try {
-        const warm = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } }, audio: false
-        });
-        stopTracks(warm);
-      } catch {}
-
-      // Try start with rear camera; fallbacks if needed
-      const tryStart = async (videoConstraints) => {
-        await html5QrCode.start(
-          videoConstraints,
-          {
-            fps: 24,
-            // Let library pick preview size; small qrbox can cause black preview on some Androids
-            // qrbox: { width: 260, height: 260 },
-            disableFlip: true,
-            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-          },
-          async (decodedText) => {
-            await stopQRScan(false);
-            try {
-              const resp = await fetch(`${API_BASE}/qr/verify`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: decodedText })
-              });
-              if (!resp.ok) {
-                let details = 'Failed to verify QR';
-                try { const j = await resp.json(); if (j?.message) details = j.message; } catch {}
-                setMessage(`❌ ${details}`);
-                setStep('confirmed');
-                await stopQRScan(true);
-                return;
-              }
-              const json = await resp.json();
-              if (json?.success) {
-                setMessage('✅ QR verified. Completing check-in…');
-                await stopQRScan(true);
-                await checkIn();
-              } else {
-                setMessage(`❌ ${json?.message || 'Invalid QR'}`);
-                setStep('confirmed');
-                await stopQRScan(true);
-              }
-            } catch (e) {
-              const hint = e?.message?.includes('Failed to fetch')
-                ? 'Network/CORS error. Is the server reachable?'
-                : e?.message || 'Unknown error';
-              setMessage(`❌ QR verify request failed. ${hint}`);
-              setStep('confirmed');
-              await stopQRScan(true);
-            }
-          },
-          () => {} // ignore per-frame errors
-        );
-      };
-
-      // Fallback order:
-      // a) facingMode environment (most Androids)
-      // b) deviceId (non-exact) from camera list
-      // c) facingMode user (last resort)
-      try {
-        await tryStart({ facingMode: { ideal: 'environment' } });
-      } catch (e1) {
-        try {
-          const cams = await Html5Qrcode.getCameras();
-          if (cams?.length) {
-            let backCam = cams.find(c => /back|rear|environment/i.test(c.label));
-            if (!backCam && cams.length > 1) backCam = cams[1];
-            const chosen = (backCam || cams[0]).id;
-            // Do NOT use { exact } on some Androids; can cause blank preview
-            await tryStart({ deviceId: chosen });
-          } else {
-            throw e1;
+      // Add styles if not already added
+      if (!document.getElementById('qr-styles')) {
+        const style = document.createElement('style');
+        style.id = 'qr-styles';
+        style.textContent = `
+          #${OVERLAY_ID} { 
+            position: fixed; 
+            top: 0; left: 0; right: 0; bottom: 0; 
+            z-index: 9999; 
+            background: #000; 
+            color: #fff;
+            display: flex;
+            flex-direction: column;
           }
-        } catch (e2) {
-          await tryStart({ facingMode: 'user' });
-        }
+          #${OVERLAY_ID} .qr-overlay-inner { 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+          }
+          #${OVERLAY_ID} .qr-topbar { 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between;
+            padding: 16px; 
+            background: rgba(0,0,0,0.8); 
+            font-weight: 700;
+            font-size: 16px;
+          }
+          #${OVERLAY_ID} .qr-close { 
+            background: rgba(255,255,255,0.2); 
+            color: #fff; 
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px; 
+            padding: 8px 12px; 
+            cursor: pointer; 
+            font-weight: 700;
+            font-size: 14px;
+          }
+          #${OVERLAY_ID} .qr-close:hover {
+            background: rgba(255,255,255,0.3);
+          }
+          #${OVERLAY_ID} .qr-video-container { 
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+          }
+          #${OVERLAY_ID} #${VIDEO_ID} { 
+            width: 100%; 
+            height: 100%;
+            position: relative;
+          }
+          #${OVERLAY_ID} .qr-help { 
+            text-align: center; 
+            padding: 16px; 
+            opacity: 0.8;
+            background: rgba(0,0,0,0.8);
+            font-size: 14px;
+          }
+          #${VIDEO_ID} video { 
+            width: 100% !important; 
+            height: 100% !important; 
+            object-fit: cover;
+          }
+        `;
+        document.head.appendChild(style);
       }
 
-      // Ensure inline playback (harmless on Android)
-      setTimeout(() => {
-        const v = document.querySelector(`#${VIDEO_ID} video`);
-        if (v) {
-          v.setAttribute('playsinline', 'true');
-          v.muted = true;
-          v.play?.().catch(() => {});
+      // Add close button event listener
+      const closeBtn = overlay.querySelector('#qr-close-btn');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', async () => {
+          console.log('Close button clicked');
+          await stopQRScan();
+          setStep('confirmed');
+          setMessage('QR scan cancelled.');
+        });
+      }
+    }
+
+    setMessage('Opening camera for QR scan...');
+
+    try {
+      // Create new Html5Qrcode instance
+      const html5QrCode = new Html5Qrcode(VIDEO_ID, { verbose: false });
+      qrRef.current = html5QrCode;
+
+      const qrCodeSuccessCallback = async (decodedText, decodedResult) => {
+        console.log('QR code detected:', decodedText);
+        setMessage('QR code detected! Verifying...');
+        
+        // Stop scanner immediately to prevent multiple scans
+        await stopQRScan(false);
+        
+        try {
+          const resp = await fetch(`${API_BASE}/qr/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: decodedText })
+          });
+          
+          if (!resp.ok) {
+            let details = 'Failed to verify QR';
+            try { 
+              const j = await resp.json(); 
+              if (j?.message) details = j.message; 
+            } catch {}
+            setMessage(`❌ ${details}`);
+            setStep('confirmed');
+            await stopQRScan(true);
+            return;
+          }
+          
+          const json = await resp.json();
+          if (json?.success) {
+            setMessage('✅ QR verified. Completing check-in…');
+            await stopQRScan(true);
+            await checkIn();
+          } else {
+            setMessage(`❌ ${json?.message || 'Invalid QR'}`);
+            setStep('confirmed');
+            await stopQRScan(true);
+          }
+        } catch (e) {
+          console.error('QR verification error:', e);
+          const hint = e?.message?.includes('Failed to fetch')
+            ? 'Network error. Check your connection.'
+            : e?.message || 'Unknown error';
+          setMessage(`❌ QR verify failed: ${hint}`);
+          setStep('confirmed');
+          await stopQRScan(true);
         }
-      }, 200);
+      };
+
+      const qrCodeErrorCallback = (error) => {
+        // Ignore frequent scanning errors, only log important ones
+        if (error && !error.includes('NotFoundException')) {
+          console.warn('QR scan error:', error);
+        }
+      };
+
+      // Configuration for QR scanning
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0,
+        disableFlip: false,
+      };
+
+      // Try different camera configurations
+      const tryStartCamera = async () => {
+        const configurations = [
+          // Try environment camera first (rear camera)
+          { facingMode: "environment" },
+          // Try user camera (front camera)
+          { facingMode: "user" },
+          // Try without any constraints
+          { video: true }
+        ];
+
+        for (let i = 0; i < configurations.length; i++) {
+          try {
+            console.log(`Trying camera configuration ${i + 1}:`, configurations[i]);
+            await html5QrCode.start(
+              configurations[i],
+              config,
+              qrCodeSuccessCallback,
+              qrCodeErrorCallback
+            );
+            console.log('Camera started successfully with configuration:', configurations[i]);
+            setMessage('✅ Camera ready! Point at QR code to scan.');
+            return; // Success, exit the loop
+          } catch (err) {
+            console.warn(`Camera configuration ${i + 1} failed:`, err);
+            if (i === configurations.length - 1) {
+              throw err; // Last attempt failed, rethrow error
+            }
+          }
+        }
+      };
+
+      await tryStartCamera();
+
+      // Set video properties for better mobile compatibility
+      setTimeout(() => {
+        const video = document.querySelector(`#${VIDEO_ID} video`);
+        if (video) {
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('muted', 'true');
+          video.play().catch(e => console.warn('Video play failed:', e));
+        }
+      }, 500);
 
     } catch (err) {
       console.error('QR start error:', err);
-      const msg =
-        err?.name === 'NotAllowedError'
-          ? 'Camera permission denied. Enable camera access in site settings.'
-          : 'Could not start camera for QR scan.';
-      setMessage(`❌ ${msg}`);
+      let errorMessage = 'Could not start camera for QR scan.';
+      
+      if (err?.name === 'NotAllowedError') {
+        errorMessage = 'Camera permission denied. Please allow camera access and try again.';
+      } else if (err?.name === 'NotFoundError') {
+        errorMessage = 'No camera found on this device.';
+      } else if (err?.name === 'NotReadableError') {
+        errorMessage = 'Camera is being used by another application.';
+      } else if (err?.message) {
+        errorMessage = `Camera error: ${err.message}`;
+      }
+      
+      setMessage(`❌ ${errorMessage}`);
       setStep('confirmed');
-      await stopQRScan(false);
+      await stopQRScan(true);
     }
   };
 
@@ -413,7 +529,10 @@ const EmployeeDashboard = () => {
 
   const stopCamera = () => {
     const stream = videoRef.current?.srcObject;
-    if (stream) stream.getTracks().forEach((track) => track.stop());
+    if (stream) {
+      stopTracks(stream);
+      videoRef.current.srcObject = null;
+    }
   };
 
   const logout = () => {
@@ -615,10 +734,10 @@ const EmployeeDashboard = () => {
             </>
           )}
 
-          {/* No small box anymore — full-screen overlay handles the UI */}
           {step === 'qr' && (
             <div className="message">
-              <span>Camera opened in full-screen for scanning…</span>
+              <Loader2 size={16} className="spin" style={{animation: 'spin 1s linear infinite'}} />
+              <span>QR Scanner active in full-screen mode...</span>
             </div>
           )}
 
