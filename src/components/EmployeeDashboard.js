@@ -18,7 +18,8 @@ import {
   AlertCircle,
   CheckSquare,
   XCircle,
-  Loader2
+  Loader2,
+  RotateCcw
 } from 'lucide-react';
 
 /** Backends */
@@ -39,6 +40,7 @@ const EmployeeDashboard = () => {
   const [message, setMessage] = useState('');
   const [step, setStep] = useState('idle'); // idle | location | camera | verifyingFace | confirmed | qr
   const [snapshot, setSnapshot] = useState(null);
+  const [currentCameraFacing, setCurrentCameraFacing] = useState('environment'); // Track current camera
   const videoRef = useRef(null);
 
   // html5-qrcode instance for full-screen overlay
@@ -234,7 +236,208 @@ const EmployeeDashboard = () => {
     }
   };
 
-  // ---------- Full-screen QR step (Android-friendly, rear cam, single stream) ----------
+  // Get available cameras to better prioritize back camera
+  const getCameraDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      console.log('Available video devices:', videoDevices);
+      
+      // Try to find back camera by label patterns
+      const backCamera = videoDevices.find(device => 
+        device.label.toLowerCase().includes('back') ||
+        device.label.toLowerCase().includes('rear') ||
+        device.label.toLowerCase().includes('environment') ||
+        device.label.toLowerCase().includes('camera 0') ||
+        (!device.label.toLowerCase().includes('front') && !device.label.toLowerCase().includes('user'))
+      );
+      
+      return { videoDevices, backCamera };
+    } catch (err) {
+      console.warn('Could not enumerate devices:', err);
+      return { videoDevices: [], backCamera: null };
+    }
+  };
+
+  // Switch camera function
+  const switchCamera = async () => {
+    if (!qrRef.current) return;
+    
+    try {
+      setMessage('Switching camera...');
+      
+      // Stop current scanner
+      await qrRef.current.stop();
+      
+      // Switch facing mode
+      const newFacing = currentCameraFacing === 'environment' ? 'user' : 'environment';
+      setCurrentCameraFacing(newFacing);
+      
+      // Restart with new camera
+      await startQRScanWithCamera(newFacing);
+    } catch (err) {
+      console.error('Error switching camera:', err);
+      setMessage('❌ Failed to switch camera');
+    }
+  };
+
+  // Enhanced QR scan start function
+  const startQRScanWithCamera = async (facingMode = 'environment') => {
+    if (!qrRef.current) return;
+
+    const qrCodeSuccessCallback = async (decodedText, decodedResult) => {
+      console.log('QR code detected:', decodedText);
+      setMessage('QR code detected! Verifying...');
+      
+      // Stop scanner immediately to prevent multiple scans
+      await stopQRScan(false);
+      
+      try {
+        const resp = await fetch(`${API_BASE}/qr/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: decodedText })
+        });
+        
+        if (!resp.ok) {
+          let details = 'Failed to verify QR';
+          try { 
+            const j = await resp.json(); 
+            if (j?.message) details = j.message; 
+          } catch {}
+          setMessage(`❌ ${details}`);
+          setStep('confirmed');
+          await stopQRScan(true);
+          return;
+        }
+        
+        const json = await resp.json();
+        if (json?.success) {
+          setMessage('✅ QR verified. Completing check-in…');
+          await stopQRScan(true);
+          await checkIn();
+        } else {
+          setMessage(`❌ ${json?.message || 'Invalid QR'}`);
+          setStep('confirmed');
+          await stopQRScan(true);
+        }
+      } catch (e) {
+        console.error('QR verification error:', e);
+        const hint = e?.message?.includes('Failed to fetch')
+          ? 'Network error. Check your connection.'
+          : e?.message || 'Unknown error';
+        setMessage(`❌ QR verify failed: ${hint}`);
+        setStep('confirmed');
+        await stopQRScan(true);
+      }
+    };
+
+    const qrCodeErrorCallback = (error) => {
+      // Ignore frequent scanning errors, only log important ones
+      if (error && !error.includes('NotFoundException')) {
+        console.warn('QR scan error:', error);
+      }
+    };
+
+    // Configuration for QR scanning
+    const config = {
+      fps: 10,
+      qrbox: { width: 250, height: 250 },
+      aspectRatio: 1.0,
+      disableFlip: false,
+    };
+
+    // Enhanced camera selection logic
+    const { videoDevices, backCamera } = await getCameraDevices();
+    
+    const configurations = [];
+    
+    // If we found a specific back camera device, use it first
+    if (backCamera && facingMode === 'environment') {
+      configurations.push({ deviceId: { exact: backCamera.deviceId } });
+    }
+    
+    // Add facing mode constraints
+    configurations.push(
+      { facingMode: { exact: facingMode } },
+      { facingMode: facingMode },
+    );
+    
+    // Add device-specific attempts for mobile
+    if (videoDevices.length > 0) {
+      videoDevices.forEach((device, index) => {
+        configurations.push({ deviceId: { exact: device.deviceId } });
+      });
+    }
+    
+    // Fallback options
+    configurations.push(
+      { video: { facingMode: facingMode } },
+      { video: true }
+    );
+
+    let cameraStarted = false;
+    for (let i = 0; i < configurations.length; i++) {
+      try {
+        console.log(`Trying camera configuration ${i + 1}:`, configurations[i]);
+        await qrRef.current.start(
+          configurations[i],
+          config,
+          qrCodeSuccessCallback,
+          qrCodeErrorCallback
+        );
+        console.log('Camera started successfully with configuration:', configurations[i]);
+        
+        // Check which camera is actually being used
+        const videoElement = document.querySelector(`#${VIDEO_ID} video`);
+        if (videoElement && videoElement.srcObject) {
+          const stream = videoElement.srcObject;
+          const videoTracks = stream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            const settings = videoTracks[0].getSettings();
+            console.log('Camera settings:', settings);
+            
+            // Update current facing mode based on actual camera
+            if (settings.facingMode) {
+              setCurrentCameraFacing(settings.facingMode);
+            }
+          }
+        }
+        
+        setMessage(`✅ ${facingMode === 'environment' ? 'Back' : 'Front'} camera ready! Point at QR code to scan.`);
+        cameraStarted = true;
+        break;
+      } catch (err) {
+        console.warn(`Camera configuration ${i + 1} failed:`, err);
+        if (i === configurations.length - 1) {
+          throw err; // Last attempt failed, rethrow error
+        }
+      }
+    }
+
+    if (!cameraStarted) {
+      throw new Error('No camera configuration worked');
+    }
+
+    // Set video properties for better mobile compatibility
+    setTimeout(() => {
+      const video = document.querySelector(`#${VIDEO_ID} video`);
+      if (video) {
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('muted', 'true');
+        video.setAttribute('autoplay', 'true');
+        
+        // Force video to fill container on mobile
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'cover';
+        
+        video.play().catch(e => console.warn('Video play failed:', e));
+      }
+    }, 500);
+  };
+
+  // ---------- Full-screen QR step (Enhanced for mobile back camera) ----------
   const startQRScan = async () => {
     console.log('Starting QR scan...');
     setStep('qr');
@@ -275,10 +478,24 @@ const EmployeeDashboard = () => {
         <div class="qr-overlay-inner">
           <div class="qr-topbar">
             <span>Scan the Admin QR</span>
-            <button id="qr-close-btn" class="qr-close">✕ Close</button>
+            <div class="qr-controls">
+              <button id="qr-switch-btn" class="qr-control">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="1 4 1 10 7 10"></polyline>
+                  <polyline points="23 20 23 14 17 14"></polyline>
+                  <path d="m20.49 9A9 9 0 0 0 5.64 5.64l1.27 1.27"></path>
+                  <path d="m3.51 15a9 9 0 0 0 14.85 3.36l-1.27-1.27"></path>
+                </svg>
+                Switch
+              </button>
+              <button id="qr-close-btn" class="qr-control qr-close">✕ Close</button>
+            </div>
           </div>
           <div id="${VIDEO_ID}" class="qr-video-container"></div>
-          <div class="qr-help">Point your camera at the QR code</div>
+          <div class="qr-help">
+            <div>Point your camera at the QR code</div>
+            <div class="qr-camera-info">Using: <span id="camera-type">${currentCameraFacing === 'environment' ? 'Back' : 'Front'} Camera</span></div>
+          </div>
         </div>
       `;
       document.body.appendChild(overlay);
@@ -312,7 +529,12 @@ const EmployeeDashboard = () => {
             font-weight: 700;
             font-size: 16px;
           }
-          #${OVERLAY_ID} .qr-close { 
+          #${OVERLAY_ID} .qr-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+          #${OVERLAY_ID} .qr-control { 
             background: rgba(255,255,255,0.2); 
             color: #fff; 
             border: 1px solid rgba(255,255,255,0.3);
@@ -321,14 +543,18 @@ const EmployeeDashboard = () => {
             cursor: pointer; 
             font-weight: 700;
             font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
           }
-          #${OVERLAY_ID} .qr-close:hover {
+          #${OVERLAY_ID} .qr-control:hover {
             background: rgba(255,255,255,0.3);
           }
           #${OVERLAY_ID} .qr-video-container { 
             flex: 1;
             position: relative;
             overflow: hidden;
+            background: #000;
           }
           #${OVERLAY_ID} #${VIDEO_ID} { 
             width: 100%; 
@@ -338,21 +564,49 @@ const EmployeeDashboard = () => {
           #${OVERLAY_ID} .qr-help { 
             text-align: center; 
             padding: 16px; 
-            opacity: 0.8;
+            opacity: 0.9;
             background: rgba(0,0,0,0.8);
             font-size: 14px;
+          }
+          #${OVERLAY_ID} .qr-camera-info {
+            margin-top: 4px;
+            font-size: 12px;
+            opacity: 0.7;
           }
           #${VIDEO_ID} video { 
             width: 100% !important; 
             height: 100% !important; 
             object-fit: cover;
+            background: #000;
+          }
+          
+          /* Mobile optimizations */
+          @media (max-width: 768px) {
+            #${OVERLAY_ID} .qr-topbar {
+              padding: 12px;
+              font-size: 14px;
+            }
+            #${OVERLAY_ID} .qr-control {
+              padding: 6px 8px;
+              font-size: 12px;
+            }
+            #${OVERLAY_ID} .qr-help {
+              padding: 12px;
+              font-size: 13px;
+            }
           }
         `;
         document.head.appendChild(style);
       }
 
-      // Add close button event listener
+      // Add event listeners
+      const switchBtn = overlay.querySelector('#qr-switch-btn');
       const closeBtn = overlay.querySelector('#qr-close-btn');
+      
+      if (switchBtn) {
+        switchBtn.addEventListener('click', switchCamera);
+      }
+      
       if (closeBtn) {
         closeBtn.addEventListener('click', async () => {
           console.log('Close button clicked');
@@ -363,118 +617,22 @@ const EmployeeDashboard = () => {
       }
     }
 
-    setMessage('Opening camera for QR scan...');
+    setMessage('Opening back camera for QR scan...');
 
     try {
       // Create new Html5Qrcode instance
       const html5QrCode = new Html5Qrcode(VIDEO_ID, { verbose: false });
       qrRef.current = html5QrCode;
 
-      const qrCodeSuccessCallback = async (decodedText, decodedResult) => {
-        console.log('QR code detected:', decodedText);
-        setMessage('QR code detected! Verifying...');
-        
-        // Stop scanner immediately to prevent multiple scans
-        await stopQRScan(false);
-        
-        try {
-          const resp = await fetch(`${API_BASE}/qr/verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: decodedText })
-          });
-          
-          if (!resp.ok) {
-            let details = 'Failed to verify QR';
-            try { 
-              const j = await resp.json(); 
-              if (j?.message) details = j.message; 
-            } catch {}
-            setMessage(`❌ ${details}`);
-            setStep('confirmed');
-            await stopQRScan(true);
-            return;
-          }
-          
-          const json = await resp.json();
-          if (json?.success) {
-            setMessage('✅ QR verified. Completing check-in…');
-            await stopQRScan(true);
-            await checkIn();
-          } else {
-            setMessage(`❌ ${json?.message || 'Invalid QR'}`);
-            setStep('confirmed');
-            await stopQRScan(true);
-          }
-        } catch (e) {
-          console.error('QR verification error:', e);
-          const hint = e?.message?.includes('Failed to fetch')
-            ? 'Network error. Check your connection.'
-            : e?.message || 'Unknown error';
-          setMessage(`❌ QR verify failed: ${hint}`);
-          setStep('confirmed');
-          await stopQRScan(true);
-        }
-      };
-
-      const qrCodeErrorCallback = (error) => {
-        // Ignore frequent scanning errors, only log important ones
-        if (error && !error.includes('NotFoundException')) {
-          console.warn('QR scan error:', error);
-        }
-      };
-
-      // Configuration for QR scanning
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
-        disableFlip: false,
-      };
-
-      // Try different camera configurations
-      const tryStartCamera = async () => {
-        const configurations = [
-          // Try environment camera first (rear camera)
-          { facingMode: "environment" },
-          // Try user camera (front camera)
-          { facingMode: "user" },
-          // Try without any constraints
-          { video: true }
-        ];
-
-        for (let i = 0; i < configurations.length; i++) {
-          try {
-            console.log(`Trying camera configuration ${i + 1}:`, configurations[i]);
-            await html5QrCode.start(
-              configurations[i],
-              config,
-              qrCodeSuccessCallback,
-              qrCodeErrorCallback
-            );
-            console.log('Camera started successfully with configuration:', configurations[i]);
-            setMessage('✅ Camera ready! Point at QR code to scan.');
-            return; // Success, exit the loop
-          } catch (err) {
-            console.warn(`Camera configuration ${i + 1} failed:`, err);
-            if (i === configurations.length - 1) {
-              throw err; // Last attempt failed, rethrow error
-            }
-          }
-        }
-      };
-
-      await tryStartCamera();
-
-      // Set video properties for better mobile compatibility
-      setTimeout(() => {
-        const video = document.querySelector(`#${VIDEO_ID} video`);
-        if (video) {
-          video.setAttribute('playsinline', 'true');
-          video.setAttribute('muted', 'true');
-          video.play().catch(e => console.warn('Video play failed:', e));
-        }
-      }, 500);
+      // Start with back camera (environment)
+      setCurrentCameraFacing('environment');
+      await startQRScanWithCamera('environment');
+      
+      // Update camera type indicator
+      const cameraTypeEl = document.getElementById('camera-type');
+      if (cameraTypeEl) {
+        cameraTypeEl.textContent = `${currentCameraFacing === 'environment' ? 'Back' : 'Front'} Camera`;
+      }
 
     } catch (err) {
       console.error('QR start error:', err);
@@ -486,6 +644,16 @@ const EmployeeDashboard = () => {
         errorMessage = 'No camera found on this device.';
       } else if (err?.name === 'NotReadableError') {
         errorMessage = 'Camera is being used by another application.';
+      } else if (err?.name === 'OverconstrainedError') {
+        errorMessage = 'Requested camera not available. Trying alternative...';
+        
+        // Try with front camera as fallback
+        try {
+          await startQRScanWithCamera('user');
+          return; // Success with front camera
+        } catch (fallbackErr) {
+          errorMessage = 'No suitable camera found for QR scanning.';
+        }
       } else if (err?.message) {
         errorMessage = `Camera error: ${err.message}`;
       }
@@ -775,4 +943,3 @@ const EmployeeDashboard = () => {
 };
 
 export default EmployeeDashboard;
-
