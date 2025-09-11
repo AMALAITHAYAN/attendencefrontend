@@ -252,7 +252,7 @@ const EmployeeDashboard = () => {
     await stopQRScan(false);
 
     // Mobile requires HTTPS for camera
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       setMessage('❌ Camera requires HTTPS on mobile/production. Please use HTTPS.');
       setStep('confirmed');
       return;
@@ -775,3 +775,4 @@ const EmployeeDashboard = () => {
 };
 
 export default EmployeeDashboard;
+
