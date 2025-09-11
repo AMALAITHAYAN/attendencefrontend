@@ -272,109 +272,106 @@ const startQRScan = async () => {
   // If already running, stop first
   await stopQRScan(false);
 
+    // ...
   const html5QrCode = new Html5Qrcode(VIDEO_ID, /* verbose */ false);
   qrRef.current = html5QrCode;
 
   try {
-    // 🔔 Warm-up permission (some mobiles won't show prompt from inside html5-qrcode)
-    // Request "environment" camera, then release it immediately.
-    try {
-      const warm = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false
-      });
-      stopTracks(warm);
-    } catch {
-      // ignore; html5-qrcode will still try to prompt
-    }
-
-    // 🎯 Prefer rear camera by deviceId; fall back to facingMode
-    let startConfig;
-    try {
-      const cameras = await Html5Qrcode.getCameras();
-      if (cameras && cameras.length > 0) {
-        let backCam = cameras.find(c => /back|rear|environment/i.test(c.label));
-        if (!backCam && cameras.length > 1) backCam = cameras[1]; // heuristic
-        const deviceId = (backCam || cameras[0]).id;
-        startConfig = { deviceId: { exact: deviceId } };
-      }
-    } catch {
-      // If getCameras fails, we’ll use facingMode below
-    }
-    if (!startConfig) {
-      startConfig = { facingMode: { exact: 'environment' } };
-    }
-
-    await html5QrCode.start(
-      startConfig,
-      {
-        fps: 24,
-        qrbox: { width: 260, height: 260 },
-        // Try to use the native BarcodeDetector when available (faster on Android)
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        // Smaller video for older phones (uncomment if needed)
-        // aspectRatio: 1.777,
-      },
-      async (decodedText) => {
-        await stopQRScan(false);
-        try {
-          const resp = await fetch(`${API_BASE}/qr/verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: decodedText })
-          });
-          if (!resp.ok) {
-            let details = 'Failed to verify QR';
-            try { const errJson = await resp.json(); if (errJson?.message) details = errJson.message; } catch {}
-            setMessage(`❌ ${details}`);
-            setStep('confirmed');
-            await stopQRScan(true);
-            return;
-          }
-          const json = await resp.json();
-          if (json?.success) {
-            setMessage('✅ QR verified. Completing check-in…');
-            await stopQRScan(true);
-            await checkIn();
-          } else {
-            setMessage(`❌ ${json?.message || 'Invalid QR'}`);
+    // 1) Try rear camera by facingMode first (most compatible on Android)
+    const tryStart = async (videoConfig) => {
+      await html5QrCode.start(
+        videoConfig,
+        {
+          fps: 24,
+          // let the library choose best preview size; some Androids show black with small qrbox
+          // comment back in if you prefer a box: qrbox: { width: 260, height: 260 },
+          disableFlip: true,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        },
+        async (decodedText) => {
+          await stopQRScan(false);
+          try {
+            const resp = await fetch(`${API_BASE}/qr/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: decodedText })
+            });
+            if (!resp.ok) {
+              let details = 'Failed to verify QR';
+              try { const errJson = await resp.json(); if (errJson?.message) details = errJson.message; } catch {}
+              setMessage(`❌ ${details}`);
+              setStep('confirmed');
+              await stopQRScan(true);
+              return;
+            }
+            const json = await resp.json();
+            if (json?.success) {
+              setMessage('✅ QR verified. Completing check-in…');
+              await stopQRScan(true);
+              await checkIn();
+            } else {
+              setMessage(`❌ ${json?.message || 'Invalid QR'}`);
+              setStep('confirmed');
+              await stopQRScan(true);
+            }
+          } catch (e) {
+            const hint = e?.message?.includes('Failed to fetch')
+              ? 'Network/CORS error. Is the server reachable?'
+              : e?.message || 'Unknown error';
+            setMessage(`❌ QR verify request failed. ${hint}`);
             setStep('confirmed');
             await stopQRScan(true);
           }
-        } catch (e) {
-          const hint = e?.message?.includes('Failed to fetch')
-            ? 'Network/CORS error. Is the server reachable?'
-            : e?.message || 'Unknown error';
-          setMessage(`❌ QR verify request failed. ${hint}`);
-          setStep('confirmed');
-          await stopQRScan(true);
+        },
+        () => {} // ignore per-frame errors
+      );
+    };
+
+    // 2) Fallback order:
+    //    a) facingMode: environment (most Androids)
+    //    b) deviceId (non-exact) from camera list (second best)
+    //    c) facingMode: user (last resort)
+    try {
+      await tryStart({ facingMode: { ideal: 'environment' } });
+    } catch (e1) {
+      try {
+        const cams = await Html5Qrcode.getCameras();
+        if (cams?.length) {
+          let backCam = cams.find(c => /back|rear|environment/i.test(c.label));
+          if (!backCam && cams.length > 1) backCam = cams[1];
+          const chosen = (backCam || cams[0]).id;
+          // NOTE: do NOT use { exact: chosen } on Android; it causes blank preview on some models
+          await tryStart({ deviceId: chosen });
+        } else {
+          throw e1;
         }
-      },
-      () => {} // ignore per-frame errors
-    );
+      } catch (e2) {
+        // final fallback to front camera
+        await tryStart({ facingMode: 'user' });
+      }
+    }
 
-    // iOS inline playback (avoids auto fullscreen)
+    // (Optional) ensure inline playback; harmless on Android
     setTimeout(() => {
       const v = document.querySelector(`#${VIDEO_ID} video`);
       if (v) {
         v.setAttribute('playsinline', 'true');
-        v.setAttribute('webkit-playsinline', 'true');
         v.muted = true;
-        // Some iOS versions need an explicit play()
         v.play?.().catch(() => {});
       }
-    }, 250);
+    }, 200);
 
   } catch (err) {
     console.error('QR start error:', err);
-    const msg = (err && err.name === 'NotAllowedError')
-      ? 'Camera permission denied. Enable camera access in site settings.'
-      : (err && err.message) || 'Could not start camera for QR scan.';
+    const msg =
+      err?.name === 'NotAllowedError'
+        ? 'Camera permission denied. Enable camera access in site settings.'
+        : 'Could not start camera for QR scan.';
     setMessage(`❌ ${msg}`);
     setStep('confirmed');
     await stopQRScan(false);
   }
-};
+
 
 const stopTracks = (stream) => {
   try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
@@ -671,6 +668,7 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
+
 
 
 
