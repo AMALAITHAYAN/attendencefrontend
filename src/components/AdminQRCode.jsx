@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 
 const API_BASE = process.env.REACT_APP_API_BASE || "";
-const TTL_SECONDS = 300; // matches your 5-minute refresh
+const TTL_SECONDS = 3; // matches your 5-minute refresh
 
 export default function AdminQRCode() {
   const [token, setToken] = useState("");
@@ -59,8 +59,8 @@ export default function AdminQRCode() {
 
     // Countdown timer
     const tick = setInterval(() => {
-      setRemaining((s) => (s > 0 ? s - 1 : 0));
-    }, 1000);
+  setRemaining((s) => (s > 0 ? s - 1 : 0));
+}, 1000);
 
     return () => {
       mounted = false;
