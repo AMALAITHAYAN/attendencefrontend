@@ -210,21 +210,24 @@ const verifyFace = async (blob) => {
   // ---------- Full-screen QR step ----------
 // ---------- Full-screen QR step (mobile rear camera + single stream) ----------
 // ---------- Full-screen QR step (mobile rear camera + single stream) ----------
+// 3) UPDATED startQRScan — mobile-friendly, rear camera, permission warm-up
 const startQRScan = async () => {
   setStep('qr');
 
-  // Make sure we’re on HTTPS (mobile won’t allow camera otherwise)
+  // Mobile requires HTTPS for camera
   if (!window.isSecureContext) {
     setMessage('❌ Camera requires HTTPS on mobile. Open this page over https://');
     return;
   }
 
-  // 🔒 IMPORTANT: stop the face camera stream before starting QR scanner
-  stopCamera();
+  // 🔒 Make sure the previous (face) stream is fully stopped before starting a new one
+  const prev = videoRef.current?.srcObject;
+  if (prev) stopTracks(prev);
+  if (videoRef.current) videoRef.current.srcObject = null;
 
   setMessage('Open camera to scan the admin QR…');
 
-  // Build overlay once
+  // Build overlay (once)
   let overlay = document.getElementById(OVERLAY_ID);
   if (!overlay) {
     overlay = document.createElement('div');
@@ -273,19 +276,45 @@ const startQRScan = async () => {
   qrRef.current = html5QrCode;
 
   try {
-    // 🎯 Prefer rear camera on mobile
-    const cameras = await Html5Qrcode.getCameras();
-    if (!cameras || cameras.length === 0) {
-      setMessage('❌ No camera found on this device.');
-      return;
+    // 🔔 Warm-up permission (some mobiles won't show prompt from inside html5-qrcode)
+    // Request "environment" camera, then release it immediately.
+    try {
+      const warm = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      stopTracks(warm);
+    } catch {
+      // ignore; html5-qrcode will still try to prompt
     }
-    let backCam = cameras.find(c => /back|rear|environment/i.test(c.label));
-    if (!backCam && cameras.length > 1) backCam = cameras[1];
-    const deviceId = (backCam || cameras[0]).id;
+
+    // 🎯 Prefer rear camera by deviceId; fall back to facingMode
+    let startConfig;
+    try {
+      const cameras = await Html5Qrcode.getCameras();
+      if (cameras && cameras.length > 0) {
+        let backCam = cameras.find(c => /back|rear|environment/i.test(c.label));
+        if (!backCam && cameras.length > 1) backCam = cameras[1]; // heuristic
+        const deviceId = (backCam || cameras[0]).id;
+        startConfig = { deviceId: { exact: deviceId } };
+      }
+    } catch {
+      // If getCameras fails, we’ll use facingMode below
+    }
+    if (!startConfig) {
+      startConfig = { facingMode: { exact: 'environment' } };
+    }
 
     await html5QrCode.start(
-      { deviceId: { exact: deviceId } },          // force this lens
-      { fps: 24, qrbox: { width: 260, height: 260 } },
+      startConfig,
+      {
+        fps: 24,
+        qrbox: { width: 260, height: 260 },
+        // Try to use the native BarcodeDetector when available (faster on Android)
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        // Smaller video for older phones (uncomment if needed)
+        // aspectRatio: 1.777,
+      },
       async (decodedText) => {
         await stopQRScan(false);
         try {
@@ -324,21 +353,31 @@ const startQRScan = async () => {
       () => {} // ignore per-frame errors
     );
 
-    // iOS: keep inline, avoid full-screen video
+    // iOS inline playback (avoids auto fullscreen)
     setTimeout(() => {
       const v = document.querySelector(`#${VIDEO_ID} video`);
-      if (v) { v.setAttribute('playsinline','true'); v.setAttribute('webkit-playsinline','true'); v.muted = true; }
+      if (v) {
+        v.setAttribute('playsinline', 'true');
+        v.setAttribute('webkit-playsinline', 'true');
+        v.muted = true;
+        // Some iOS versions need an explicit play()
+        v.play?.().catch(() => {});
+      }
     }, 250);
 
   } catch (err) {
     console.error('QR start error:', err);
     const msg = (err && err.name === 'NotAllowedError')
       ? 'Camera permission denied. Enable camera access in site settings.'
-      : 'Could not start camera for QR scan.';
+      : (err && err.message) || 'Could not start camera for QR scan.';
     setMessage(`❌ ${msg}`);
     setStep('confirmed');
     await stopQRScan(false);
   }
+};
+
+const stopTracks = (stream) => {
+  try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
 };
 
 const stopQRScan = async (removeOverlay = true) => {
@@ -632,6 +671,7 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
+
 
 
 
