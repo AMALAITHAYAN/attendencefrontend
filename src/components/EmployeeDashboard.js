@@ -27,8 +27,8 @@ const API_BASE  = process.env.REACT_APP_API_BASE  || 'http://127.0.0.1:8000'; //
 const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'https://4a94b6e818b2.ngrok-free.app'; // Flask Wi-Fi API
 
 const companyLocation = {
-  latitude: 10.937340149363443,
-  longitude: 76.95607640106563
+  latitude: 10.93691706913987,
+  longitude: 76.95671232542348
 };
 
 const OVERLAY_ID = 'qr-fullscreen-overlay';
@@ -943,3 +943,4 @@ const EmployeeDashboard = () => {
 };
 
 export default EmployeeDashboard;
+
