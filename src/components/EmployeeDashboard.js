@@ -31,7 +31,7 @@ const companyLocation = {
 };
 
 const OVERLAY_ID = 'qr-fullscreen-overlay';
-const VIDEO_ID = 'qr-fullscreen-video';
+const VIDEO_ID   = 'qr-fullscreen-video';
 
 const EmployeeDashboard = () => {
   const user = JSON.parse(localStorage.getItem('user'));
@@ -58,8 +58,7 @@ const EmployeeDashboard = () => {
   const verifyWifiThenLocation = async () => {
     setMessage('Checking Wi-Fi…');
     try {
-      const url = `${WIFI_BASE}/student/${STUDENT_ID}/${TEACHER_ID}` +
-                  `?ngrok-skip-browser-warning=1&t=${Date.now()}`;
+      const url = `${WIFI_BASE}/student/${STUDENT_ID}/${TEACHER_ID}?ngrok-skip-browser-warning=1&t=${Date.now()}`;
 
       const res = await fetch(url, {
         method: 'GET',
@@ -142,6 +141,7 @@ const EmployeeDashboard = () => {
     canvas.width = 320;
     canvas.height = 240;
     const ctx = canvas.getContext('2d');
+    if (!videoRef.current) return;
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
     // Create a real JPEG blob (quality ~85%)
@@ -169,10 +169,7 @@ const EmployeeDashboard = () => {
       const res = await axios.post(
         'https://backendattendance-1.onrender.com/api/face/checkin',
         formData,
-        {
-          // Let browser set Content-Type with boundary
-          timeout: 120000, // handle cold starts
-        }
+        { timeout: 120000 } // handle cold starts
       );
 
       const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
@@ -186,36 +183,37 @@ const EmployeeDashboard = () => {
 
       setMessage(`✅ Face match result: ${body}`);
       setStep('confirmed'); // proceed to QR
-   } catch (err) {
-    console.error('QR start error:', err);
-    const msg =
-      err?.name === 'NotAllowedError'
-        ? 'Camera permission denied. Enable camera access in site settings.'
-        : 'Could not start camera for QR scan.';
-    setMessage(`❌ ${msg}`);
-    setStep('confirmed');
-    await stopQRScan(false);
-  }
-}; 
+    } catch (err) {
+      const serverMsg = err?.response?.data
+        ? (typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data))
+        : err?.message || 'Unknown error';
+
+      setMessage(`❌ Face verification failed. ${serverMsg}`);
+      console.error('face-checkin error:', err);
+      setStep('idle');
+      stopCamera();
+    }
+  };
 
   // ---------- helpers for media/QR ----------
   const stopTracks = (stream) => {
-  try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
-};
+    try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
+  };
 
-const stopQRScan = async (removeOverlay = true) => {
-  try {
-    if (qrRef.current) {
-      await qrRef.current.stop();
-      await qrRef.current.clear();
-      qrRef.current = null;
+  const stopQRScan = async (removeOverlay = true) => {
+    try {
+      if (qrRef.current) {
+        await qrRef.current.stop();
+        await qrRef.current.clear();
+        qrRef.current = null;
+      }
+    } catch {}
+    if (removeOverlay) {
+      const overlay = document.getElementById(OVERLAY_ID);
+      if (overlay) overlay.remove();
     }
-  } catch {}
-  if (removeOverlay) {
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (overlay) overlay.remove();
-  }
-};
+  };
+
   // ---------- Full-screen QR step (Android-friendly, rear cam, single stream) ----------
   const startQRScan = async () => {
     setStep('qr');
@@ -658,4 +656,3 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
-
