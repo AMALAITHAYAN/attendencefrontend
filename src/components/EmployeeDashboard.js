@@ -22,8 +22,8 @@ import {
 } from 'lucide-react';
 
 /** Backends */
-const API_BASE  = process.env.REACT_APP_API_BASE  || 'http://127.0.0.1:8000';   // QR/attendance API
-const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'https://4a94b6e818b2.ngrok-free.app'; // Flask Wi-Fi API (ngrok URL in prod)
+const API_BASE  = process.env.REACT_APP_API_BASE  || 'http://127.0.0.1:8000'; // ⬅️ Use HTTPS URL in prod
+const WIFI_BASE = process.env.REACT_APP_WIFI_BASE || 'https://4a94b6e818b2.ngrok-free.app'; // Flask Wi-Fi API
 
 const companyLocation = {
   latitude: 10.937340149363443,
@@ -52,60 +52,56 @@ const EmployeeDashboard = () => {
     };
   }, []);
 
-  const WIFI_BASE =
-  process.env.REACT_APP_WIFI_BASE || 'https://4a94b6e818b2.ngrok-free.app';
+  const STUDENT_ID = encodeURIComponent(user?.rollNo || user?.id || 'S001');
+  const TEACHER_ID = 'T001';
 
-const STUDENT_ID = encodeURIComponent(user?.rollNo || user?.id || 'S001');
-const TEACHER_ID = 'T001';
+  const verifyWifiThenLocation = async () => {
+    setMessage('Checking Wi-Fi…');
+    try {
+      const url = `${WIFI_BASE}/student/${STUDENT_ID}/${TEACHER_ID}` +
+                  `?ngrok-skip-browser-warning=1&t=${Date.now()}`;
 
-const verifyWifiThenLocation = async () => {
-  setMessage('Checking Wi-Fi…');
-  try {
-    const url = `${WIFI_BASE}/student/${STUDENT_ID}/${TEACHER_ID}` +
-                `?ngrok-skip-browser-warning=1&t=${Date.now()}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        headers: { 'ngrok-skip-browser-warning': '1', 'Accept': 'application/json' }
+      });
 
-    const res = await fetch(url, {
-      method: 'GET',
-      mode: 'cors',
-      headers: { 'ngrok-skip-browser-warning': '1', 'Accept': 'application/json' }
-    });
-
-    if (!res.ok) {
-      if (res.status === 404) {
-        setMessage('❌ No teacher session found. Ask the teacher to press “Start Session”.');
+      if (!res.ok) {
+        if (res.status === 404) {
+          setMessage('❌ No teacher session found. Ask the teacher to press “Start Session”.');
+          return;
+        }
+        const text = await res.text().catch(() => '');
+        setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0,120)}`);
         return;
       }
-      const text = await res.text().catch(() => '');
-      setMessage(`❌ Wi-Fi check failed (HTTP ${res.status}). ${text.slice(0,120)}`);
-      return;
-    }
 
-    // Try JSON even if content-type is off
-    let data;
-    const ct = res.headers.get('content-type') || '';
-    if (ct.includes('application/json')) {
-      data = await res.json();
-    } else {
-      const text = await res.text();
-      try { data = JSON.parse(text); }
-      catch {
-        setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0,120)}`);
-        return;
+      // Try JSON even if content-type is off
+      let data;
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        try { data = JSON.parse(text); }
+        catch {
+          setMessage(`❌ Wi-Fi check: unexpected response type. ${text.slice(0,120)}`);
+          return;
+        }
       }
-    }
 
-    if (data.ok) {
-      setMessage('✅ Wi-Fi paired. Verifying location…');
-      verifyLocation();
-    } else {
-      setMessage(`❌ Wi-Fi not connected: ${data.reason || 'Different network'}.`);
+      if (data.ok) {
+        setMessage('✅ Wi-Fi paired. Verifying location…');
+        verifyLocation();
+      } else {
+        setMessage(`❌ Wi-Fi not connected: ${data.reason || 'Different network'}.`);
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage('❌ Wi-Fi check failed (network/CORS).');
     }
-  } catch (err) {
-    console.error(err);
-    setMessage('❌ Wi-Fi check failed (network/CORS).');
-  }
-};
-
+  };
 
   const verifyLocation = () => {
     setMessage('Verifying location...');
@@ -140,256 +136,255 @@ const verifyWifiThenLocation = async () => {
     }
   };
 
-// --- capture a JPEG blob straight from canvas ---
-const captureFace = () => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 320;
-  canvas.height = 240;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+  // --- capture a JPEG blob straight from canvas ---
+  const captureFace = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-  // Create a real JPEG blob (quality ~85%)
-  canvas.toBlob(async (blob) => {
-    if (!blob) {
-      setMessage('❌ Could not capture image.');
-      return;
-    }
-    // Preview
-    setSnapshot(URL.createObjectURL(blob));
-    // Verify
-    await verifyFace(blob);
-  }, 'image/jpeg', 0.85);
-};
-
-const verifyFace = async (blob) => {
-  try {
-    const formData = new FormData();
-    // Make sure the field name matches your Spring controller: @RequestParam("image")
-    formData.append('image', blob, 'face.jpg');
-
-    setStep('verifyingFace');
-    setMessage('Verifying face…');
-
-    const res = await axios.post(
-      'https://backendattendance-1.onrender.com/api/face/checkin',
-      formData,
-      {
-        // DO NOT set Content-Type; browser adds boundary automatically
-        timeout: 120000, // 120s to survive Render cold starts
-        // onUploadProgress: (e) => console.log('upload', e.loaded, e.total)
+    // Create a real JPEG blob (quality ~85%)
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        setMessage('❌ Could not capture image.');
+        return;
       }
-    );
+      // Preview
+      setSnapshot(URL.createObjectURL(blob));
+      // Verify
+      await verifyFace(blob);
+    }, 'image/jpeg', 0.85);
+  };
 
-    const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+  const verifyFace = async (blob) => {
+    try {
+      const formData = new FormData();
+      // Must match @RequestParam("image") in Spring
+      formData.append('image', blob, 'face.jpg');
 
-    if (body.includes('Not Matched')) {
-      setMessage('❌ Face not matched. Access denied.');
+      setStep('verifyingFace');
+      setMessage('Verifying face…');
+
+      const res = await axios.post(
+        'https://backendattendance-1.onrender.com/api/face/checkin',
+        formData,
+        {
+          // Let browser set Content-Type with boundary
+          timeout: 120000, // handle cold starts
+        }
+      );
+
+      const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+
+      if (body.includes('Not Matched')) {
+        setMessage('❌ Face not matched. Access denied.');
+        setStep('idle');
+        stopCamera();
+        return;
+      }
+
+      setMessage(`✅ Face match result: ${body}`);
+      setStep('confirmed'); // proceed to QR
+    } catch (err) {
+      // Show as much detail as we can
+      const serverMsg = err?.response?.data
+        ? (typeof err.response.data === 'string'
+            ? err.response.data
+            : JSON.stringify(err.response.data))
+        : err?.message || 'Unknown error';
+
+      setMessage(`❌ Face verification failed. ${serverMsg}`);
+      console.error('face-checkin error:', err);
       setStep('idle');
       stopCamera();
+    }
+  };
+
+  // ---------- helpers for media/QR ----------
+  const stopTracks = (stream) => {
+    try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
+  };
+
+  const stopQRScan = async (removeOverlay = true) => {
+    try {
+      if (qrRef.current) {
+        await qrRef.current.stop();
+        await qrRef.current.clear();
+        qrRef.current = null;
+      }
+    } catch {}
+    if (removeOverlay) {
+      const overlay = document.getElementById(OVERLAY_ID);
+      if (overlay) overlay.remove();
+    }
+  };
+
+  // ---------- Full-screen QR step (Android-friendly, rear cam, single stream) ----------
+  const startQRScan = async () => {
+    setStep('qr');
+
+    // Mobile requires HTTPS for camera
+    if (!window.isSecureContext) {
+      setMessage('❌ Camera requires HTTPS on mobile. Open this page over https://');
       return;
     }
 
-    setMessage(`✅ Face match result: ${body}`);
-    setStep('confirmed'); // proceed to QR
-  } catch (err) {
-    // Show as much detail as we can
-    const serverMsg = err?.response?.data
-      ? (typeof err.response.data === 'string'
-          ? err.response.data
-          : JSON.stringify(err.response.data))
-      : err?.message || 'Unknown error';
+    // Ensure previous (face) stream is fully stopped before starting a new one
+    const prev = videoRef.current?.srcObject;
+    if (prev) stopTracks(prev);
+    if (videoRef.current) videoRef.current.srcObject = null;
 
-    setMessage(`❌ Face verification failed. ${serverMsg}`);
-    console.error('face-checkin error:', err);
-    setStep('idle');
-    stopCamera();
-  }
-};
+    setMessage('Open camera to scan the admin QR…');
 
-
-  // ---------- Full-screen QR step ----------
-// ---------- Full-screen QR step (mobile rear camera + single stream) ----------
-// ---------- Full-screen QR step (mobile rear camera + single stream) ----------
-// 3) UPDATED startQRScan — mobile-friendly, rear camera, permission warm-up
-const startQRScan = async () => {
-  setStep('qr');
-
-  // Mobile requires HTTPS for camera
-  if (!window.isSecureContext) {
-    setMessage('❌ Camera requires HTTPS on mobile. Open this page over https://');
-    return;
-  }
-
-  // 🔒 Make sure the previous (face) stream is fully stopped before starting a new one
-  const prev = videoRef.current?.srcObject;
-  if (prev) stopTracks(prev);
-  if (videoRef.current) videoRef.current.srcObject = null;
-
-  setMessage('Open camera to scan the admin QR…');
-
-  // Build overlay (once)
-  let overlay = document.getElementById(OVERLAY_ID);
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = OVERLAY_ID;
-    overlay.innerHTML = `
-      <div class="qr-overlay-inner">
-        <div class="qr-topbar">
-          <span>Scan the Admin QR</span>
-          <button id="qr-close-btn" class="qr-close">Close</button>
+    // Build overlay (once)
+    let overlay = document.getElementById(OVERLAY_ID);
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = OVERLAY_ID;
+      overlay.innerHTML = `
+        <div class="qr-overlay-inner">
+          <div class="qr-topbar">
+            <span>Scan the Admin QR</span>
+            <button id="qr-close-btn" class="qr-close">Close</button>
+          </div>
+          <div id="${VIDEO_ID}"></div>
+          <div class="qr-help">Point your camera at the QR code</div>
         </div>
-        <div id="${VIDEO_ID}"></div>
-        <div class="qr-help">Point your camera at the QR code</div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
+      `;
+      document.body.appendChild(overlay);
 
-    const style = document.createElement('style');
-    style.textContent = `
-      #${OVERLAY_ID}{ position:fixed; inset:0; z-index:9999; background:#000; color:#fff;
-        display:grid; grid-template-rows:auto 1fr auto; }
-      #${OVERLAY_ID} .qr-overlay-inner{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
-      #${OVERLAY_ID} .qr-topbar{ display:flex; align-items:center; justify-content:space-between;
-        padding:12px 16px; background:rgba(0,0,0,.4); font-weight:700; }
-      #${OVERLAY_ID} .qr-close{ background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
-        border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:800; }
-      #${OVERLAY_ID} #${VIDEO_ID}{ width:100vw; height:calc(100vh - 120px); }
-      #${OVERLAY_ID} .qr-help{ text-align:center; padding:10px; opacity:.75; }
-      #${VIDEO_ID} video{ width:100% !important; height:100% !important; object-fit:cover; }
-      #${OVERLAY_ID}::after{ content:""; position:absolute; left:10%; right:10%; top:50%;
-        height:2px; background:rgba(0,255,128,.6); box-shadow:0 0 12px rgba(0,255,128,.8);
-        transform:translateY(-1px); }
-    `;
-    document.head.appendChild(style);
+      const style = document.createElement('style');
+      style.textContent = `
+        #${OVERLAY_ID}{ position:fixed; inset:0; z-index:9999; background:#000; color:#fff;
+          display:grid; grid-template-rows:auto 1fr auto; }
+        #${OVERLAY_ID} .qr-overlay-inner{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
+        #${OVERLAY_ID} .qr-topbar{ display:flex; align-items:center; justify-content:space-between;
+          padding:12px 16px; background:rgba(0,0,0,.4); font-weight:700; }
+        #${OVERLAY_ID} .qr-close{ background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.25);
+          border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:800; }
+        #${OVERLAY_ID} #${VIDEO_ID}{ width:100vw; height:calc(100vh - 120px); }
+        #${OVERLAY_ID} .qr-help{ text-align:center; padding:10px; opacity:.75; }
+        #${VIDEO_ID} video{ width:100% !important; height:100% !important; object-fit:cover; }
+      `;
+      document.head.appendChild(style);
 
-    overlay.querySelector('#qr-close-btn').addEventListener('click', () => {
-      stopQRScan();
-      setStep('confirmed');
-      setMessage('QR scan cancelled.');
-    });
-  }
-
-  // If already running, stop first
-  await stopQRScan(false);
-
-    // ...
-  const html5QrCode = new Html5Qrcode(VIDEO_ID, /* verbose */ false);
-  qrRef.current = html5QrCode;
-
-  try {
-    // 1) Try rear camera by facingMode first (most compatible on Android)
-    const tryStart = async (videoConfig) => {
-      await html5QrCode.start(
-        videoConfig,
-        {
-          fps: 24,
-          // let the library choose best preview size; some Androids show black with small qrbox
-          // comment back in if you prefer a box: qrbox: { width: 260, height: 260 },
-          disableFlip: true,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        },
-        async (decodedText) => {
-          await stopQRScan(false);
-          try {
-            const resp = await fetch(`${API_BASE}/qr/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ token: decodedText })
-            });
-            if (!resp.ok) {
-              let details = 'Failed to verify QR';
-              try { const errJson = await resp.json(); if (errJson?.message) details = errJson.message; } catch {}
-              setMessage(`❌ ${details}`);
-              setStep('confirmed');
-              await stopQRScan(true);
-              return;
-            }
-            const json = await resp.json();
-            if (json?.success) {
-              setMessage('✅ QR verified. Completing check-in…');
-              await stopQRScan(true);
-              await checkIn();
-            } else {
-              setMessage(`❌ ${json?.message || 'Invalid QR'}`);
-              setStep('confirmed');
-              await stopQRScan(true);
-            }
-          } catch (e) {
-            const hint = e?.message?.includes('Failed to fetch')
-              ? 'Network/CORS error. Is the server reachable?'
-              : e?.message || 'Unknown error';
-            setMessage(`❌ QR verify request failed. ${hint}`);
-            setStep('confirmed');
-            await stopQRScan(true);
-          }
-        },
-        () => {} // ignore per-frame errors
-      );
-    };
-
-    // 2) Fallback order:
-    //    a) facingMode: environment (most Androids)
-    //    b) deviceId (non-exact) from camera list (second best)
-    //    c) facingMode: user (last resort)
-    try {
-      await tryStart({ facingMode: { ideal: 'environment' } });
-    } catch (e1) {
-      try {
-        const cams = await Html5Qrcode.getCameras();
-        if (cams?.length) {
-          let backCam = cams.find(c => /back|rear|environment/i.test(c.label));
-          if (!backCam && cams.length > 1) backCam = cams[1];
-          const chosen = (backCam || cams[0]).id;
-          // NOTE: do NOT use { exact: chosen } on Android; it causes blank preview on some models
-          await tryStart({ deviceId: chosen });
-        } else {
-          throw e1;
-        }
-      } catch (e2) {
-        // final fallback to front camera
-        await tryStart({ facingMode: 'user' });
-      }
+      overlay.querySelector('#qr-close-btn').addEventListener('click', () => {
+        stopQRScan();
+        setStep('confirmed');
+        setMessage('QR scan cancelled.');
+      });
     }
 
-    // (Optional) ensure inline playback; harmless on Android
-    setTimeout(() => {
-      const v = document.querySelector(`#${VIDEO_ID} video`);
-      if (v) {
-        v.setAttribute('playsinline', 'true');
-        v.muted = true;
-        v.play?.().catch(() => {});
-      }
-    }, 200);
-
-  } catch (err) {
-    console.error('QR start error:', err);
-    const msg =
-      err?.name === 'NotAllowedError'
-        ? 'Camera permission denied. Enable camera access in site settings.'
-        : 'Could not start camera for QR scan.';
-    setMessage(`❌ ${msg}`);
-    setStep('confirmed');
+    // If already running, stop first
     await stopQRScan(false);
-  }
 
+    const html5QrCode = new Html5Qrcode(VIDEO_ID, /* verbose */ false);
+    qrRef.current = html5QrCode;
 
-const stopTracks = (stream) => {
-  try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
-};
+    try {
+      // Warm-up permission (some Android versions need this)
+      try {
+        const warm = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } }, audio: false
+        });
+        stopTracks(warm);
+      } catch {}
 
-const stopQRScan = async (removeOverlay = true) => {
-  try {
-    if (qrRef.current) {
-      await qrRef.current.stop();
-      await qrRef.current.clear();
-      qrRef.current = null;
+      // Try start with rear camera; fallbacks if needed
+      const tryStart = async (videoConstraints) => {
+        await html5QrCode.start(
+          videoConstraints,
+          {
+            fps: 24,
+            // Let library pick preview size; small qrbox can cause black preview on some Androids
+            // qrbox: { width: 260, height: 260 },
+            disableFlip: true,
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          },
+          async (decodedText) => {
+            await stopQRScan(false);
+            try {
+              const resp = await fetch(`${API_BASE}/qr/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: decodedText })
+              });
+              if (!resp.ok) {
+                let details = 'Failed to verify QR';
+                try { const j = await resp.json(); if (j?.message) details = j.message; } catch {}
+                setMessage(`❌ ${details}`);
+                setStep('confirmed');
+                await stopQRScan(true);
+                return;
+              }
+              const json = await resp.json();
+              if (json?.success) {
+                setMessage('✅ QR verified. Completing check-in…');
+                await stopQRScan(true);
+                await checkIn();
+              } else {
+                setMessage(`❌ ${json?.message || 'Invalid QR'}`);
+                setStep('confirmed');
+                await stopQRScan(true);
+              }
+            } catch (e) {
+              const hint = e?.message?.includes('Failed to fetch')
+                ? 'Network/CORS error. Is the server reachable?'
+                : e?.message || 'Unknown error';
+              setMessage(`❌ QR verify request failed. ${hint}`);
+              setStep('confirmed');
+              await stopQRScan(true);
+            }
+          },
+          () => {} // ignore per-frame errors
+        );
+      };
+
+      // Fallback order:
+      // a) facingMode environment (most Androids)
+      // b) deviceId (non-exact) from camera list
+      // c) facingMode user (last resort)
+      try {
+        await tryStart({ facingMode: { ideal: 'environment' } });
+      } catch (e1) {
+        try {
+          const cams = await Html5Qrcode.getCameras();
+          if (cams?.length) {
+            let backCam = cams.find(c => /back|rear|environment/i.test(c.label));
+            if (!backCam && cams.length > 1) backCam = cams[1];
+            const chosen = (backCam || cams[0]).id;
+            // Do NOT use { exact } on some Androids; can cause blank preview
+            await tryStart({ deviceId: chosen });
+          } else {
+            throw e1;
+          }
+        } catch (e2) {
+          await tryStart({ facingMode: 'user' });
+        }
+      }
+
+      // Ensure inline playback (harmless on Android)
+      setTimeout(() => {
+        const v = document.querySelector(`#${VIDEO_ID} video`);
+        if (v) {
+          v.setAttribute('playsinline', 'true');
+          v.muted = true;
+          v.play?.().catch(() => {});
+        }
+      }, 200);
+
+    } catch (err) {
+      console.error('QR start error:', err);
+      const msg =
+        err?.name === 'NotAllowedError'
+          ? 'Camera permission denied. Enable camera access in site settings.'
+          : 'Could not start camera for QR scan.';
+      setMessage(`❌ ${msg}`);
+      setStep('confirmed');
+      await stopQRScan(false);
     }
-  } catch {}
-  if (removeOverlay) {
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (overlay) overlay.remove();
-  }
-};
+  };
 
   const checkIn = async () => {
     try {
@@ -399,13 +394,12 @@ const stopQRScan = async (removeOverlay = true) => {
       setAttendanceId(res.data.id);
       setMessage('✅ Checked in successfully.');
       stopCamera();
-      setStep('idle'); // <-- back to dashboard idle
+      setStep('idle'); // back to dashboard
     } catch (err) {
       const serverMsg = typeof err?.response?.data === 'string'
         ? err.response.data
         : err?.response?.data?.message || 'Already checked in today.';
       setMessage(`❌ ${serverMsg}`);
-      // After a failed check-in attempt, allow user to retry scan if needed
       setStep('confirmed');
     }
   };
@@ -668,15 +662,3 @@ const stopQRScan = async (removeOverlay = true) => {
 };
 
 export default EmployeeDashboard;
-
-
-
-
-
-
-
-
-
-
-
-
