@@ -132,7 +132,7 @@ export default function AdminQRCode() {
       <div className="qr-screen">
         <header className="qr-header">
           <h1 className="qr-title">Attendance QR</h1>
-          <p className="qr-subtitle">Auto-refresh every 5 minutes • Live countdown</p>
+          <p className="qr-subtitle">Auto-refresh every 3 minutes • Live countdown</p>
         </header>
 
         <main className="qr-card">
