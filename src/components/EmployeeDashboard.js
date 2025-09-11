@@ -186,40 +186,36 @@ const EmployeeDashboard = () => {
 
       setMessage(`✅ Face match result: ${body}`);
       setStep('confirmed'); // proceed to QR
-    } catch (err) {
-      // Show as much detail as we can
-      const serverMsg = err?.response?.data
-        ? (typeof err.response.data === 'string'
-            ? err.response.data
-            : JSON.stringify(err.response.data))
-        : err?.message || 'Unknown error';
-
-      setMessage(`❌ Face verification failed. ${serverMsg}`);
-      console.error('face-checkin error:', err);
-      setStep('idle');
-      stopCamera();
-    }
-  };
+   } catch (err) {
+    console.error('QR start error:', err);
+    const msg =
+      err?.name === 'NotAllowedError'
+        ? 'Camera permission denied. Enable camera access in site settings.'
+        : 'Could not start camera for QR scan.';
+    setMessage(`❌ ${msg}`);
+    setStep('confirmed');
+    await stopQRScan(false);
+  }
+}; 
 
   // ---------- helpers for media/QR ----------
   const stopTracks = (stream) => {
-    try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
-  };
+  try { stream?.getTracks()?.forEach(t => t.stop()); } catch {}
+};
 
-  const stopQRScan = async (removeOverlay = true) => {
-    try {
-      if (qrRef.current) {
-        await qrRef.current.stop();
-        await qrRef.current.clear();
-        qrRef.current = null;
-      }
-    } catch {}
-    if (removeOverlay) {
-      const overlay = document.getElementById(OVERLAY_ID);
-      if (overlay) overlay.remove();
+const stopQRScan = async (removeOverlay = true) => {
+  try {
+    if (qrRef.current) {
+      await qrRef.current.stop();
+      await qrRef.current.clear();
+      qrRef.current = null;
     }
-  };
-
+  } catch {}
+  if (removeOverlay) {
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay) overlay.remove();
+  }
+};
   // ---------- Full-screen QR step (Android-friendly, rear cam, single stream) ----------
   const startQRScan = async () => {
     setStep('qr');
@@ -662,3 +658,4 @@ const EmployeeDashboard = () => {
 };
 
 export default EmployeeDashboard;
+
